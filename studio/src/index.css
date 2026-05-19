@@ -2,6 +2,7 @@
 @import "./design-system/themes.css";
 @import "tailwindcss";
 @import "./styles/layout.css";
+@import "./styles/accessibility.css";
 @import "./components/primitives/primitives.css";
 
 @theme {

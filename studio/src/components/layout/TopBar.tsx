@@ -4,6 +4,8 @@ import { CommandPalette } from './CommandPalette';
 import { useProjects } from '@/hooks/useProjects';
 import { useTheme } from '@/hooks/useTheme';
 import { useShellContext } from './StudioShell';
+import { useWorkspaceContext } from '@/hooks/useWorkspaceContext';
+import { WorkspaceSelector } from '@/components/primitives/WorkspaceSelector';
 
 export function TopBar() {
   const navigate = useNavigate();
@@ -12,6 +14,8 @@ export function TopBar() {
   const { toggleSidebar, setMobileMenuOpen, mobileMenuOpen } = useShellContext();
   const [commandOpen, setCommandOpen] = useState(false);
   const { projects } = useProjects();
+  const { activeWorkspace, allWorkspaces, setActiveWorkspace, loading, error, refresh } =
+    useWorkspaceContext();
 
   const currentProject = params.projectId ?? null;
 
@@ -92,6 +96,18 @@ export function TopBar() {
         )}
 
         <div style={{ flex: 1 }} />
+
+        <div className="topbar-workspace-selector">
+          <WorkspaceSelector
+            workspaces={allWorkspaces}
+            activeWorkspaceId={activeWorkspace?.id ?? null}
+            onSelect={(id) => setActiveWorkspace(id)}
+            onCreateWorkspace={() => navigate(`/studio/projects/${currentProject}/admin/workspaces?create=true`)}
+            loading={loading}
+            error={error ?? undefined}
+            onRetry={refresh}
+          />
+        </div>
 
         <button
           className="topbar-search"

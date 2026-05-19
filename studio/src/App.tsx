@@ -11,6 +11,9 @@ export default function App() {
   const router = createStudioRouter();
   return (
     <ErrorBoundary>
+      <a href="#main-content" className="skip-to-content">
+        Skip to main content
+      </a>
       <RouterProvider router={router} />
     </ErrorBoundary>
   );

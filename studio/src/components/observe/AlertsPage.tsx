@@ -69,7 +69,7 @@ export function AlertsPage() {
   return (
     <div className="flex flex-col h-full">
       <div
-        className="flex items-center justify-between px-6 py-4"
+        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-6 py-4"
         style={{ borderBottom: '1px solid var(--color-outline-variant)' }}
       >
         <div>
@@ -91,6 +91,7 @@ export function AlertsPage() {
                 key={f}
                 onClick={() => setStateFilter(f)}
                 className="px-3 py-1 text-xs font-medium rounded capitalize transition-colors"
+                aria-pressed={stateFilter === f}
                 style={
                   stateFilter === f
                     ? { background: 'var(--color-primary)', color: 'var(--color-on-primary)' }
@@ -104,6 +105,7 @@ export function AlertsPage() {
           <button
             onClick={fetchAlerts}
             disabled={loading}
+            aria-busy={loading}
             className="px-3 py-1.5 text-xs rounded transition-colors"
             style={{
               border: '1px solid var(--color-outline)',

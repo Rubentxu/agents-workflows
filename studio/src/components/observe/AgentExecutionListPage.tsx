@@ -60,7 +60,7 @@ export function AgentExecutionListPage() {
   return (
     <div className="flex flex-col h-full">
       <div
-        className="flex items-center justify-between px-6 py-4"
+        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-6 py-4"
         style={{ borderBottom: '1px solid var(--color-outline-variant)' }}
       >
         <div>
@@ -84,6 +84,7 @@ export function AgentExecutionListPage() {
                 key={f}
                 onClick={() => setStatusFilter(f)}
                 className="px-3 py-1 text-xs font-medium rounded transition-colors capitalize"
+                aria-pressed={statusFilter === f}
                 style={
                   statusFilter === f
                     ? { background: 'var(--color-primary)', color: 'var(--color-on-primary)' }
@@ -98,6 +99,7 @@ export function AgentExecutionListPage() {
             onClick={fetchExecutions}
             disabled={loading}
             className="px-3 py-1.5 text-xs rounded transition-colors"
+            aria-busy={loading}
             style={{
               border: '1px solid var(--color-outline)',
               color: 'var(--color-on-surface)',
@@ -134,14 +136,15 @@ export function AgentExecutionListPage() {
             description="Agent executions will appear here once they are run. Executions are reported by agents through MCP."
           />
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2" role="list" aria-label="Agent executions">
             {filtered.map((exec) => {
               const sc = STATUS_COLORS[exec.status] ?? STATUS_COLORS.cancelled;
               return (
                 <div
                   key={exec.id}
+                  role="listitem"
                   onClick={() => navigate(`/studio/projects/${projectId}/observe/agent-executions/${encodeURIComponent(exec.id)}`)}
-                  className="flex items-center gap-4 px-4 py-3 rounded-lg cursor-pointer group"
+                  className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 py-3 rounded-lg cursor-pointer group"
                   style={{
                     background: 'var(--color-surface)',
                     border: '1px solid var(--color-outline-variant)',
@@ -159,10 +162,11 @@ export function AgentExecutionListPage() {
                   <div
                     className={`w-2 h-2 rounded-full flex-shrink-0 ${sc.dotPulse ? 'animate-pulse' : ''}`}
                     style={{ background: sc.dot }}
+                    aria-hidden="true"
                   />
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium truncate" style={{ color: 'var(--color-on-surface)' }}>
                         {exec.workflowArn.split('/').pop() ?? exec.workflowArn}
                       </span>
@@ -172,36 +176,33 @@ export function AgentExecutionListPage() {
                           color: sc.text,
                           background: sc.bg,
                         }}
+                        aria-label={`Status: ${exec.status}`}
                       >
                         {exec.status}
                       </span>
                     </div>
-                    <div className="flex items-center gap-3 mt-0.5">
-                      <span className="font-mono text-xs truncate" style={{ color: 'var(--color-secondary)' }}>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
+                      <span className="font-mono text-xs truncate max-w-full sm:max-w-[200px]" style={{ color: 'var(--color-secondary)' }}>
                         {exec.workflowArn}
                       </span>
-                      <span style={{ color: 'var(--color-outline)' }}>&middot;</span>
+                      <span style={{ color: 'var(--color-outline)' }} className="hidden sm:inline">&middot;</span>
                       <span className="text-xs" style={{ color: 'var(--color-secondary)' }}>
                         {exec.agentArn.split('/').pop()}
                       </span>
                     </div>
                   </div>
 
-                  <div className="text-xs flex-shrink-0" style={{ color: 'var(--color-secondary)' }}>
-                    {exec.workspaceName}
-                  </div>
-
-                  <div className="text-xs flex-shrink-0 font-mono w-16 text-right" style={{ color: 'var(--color-secondary)' }}>
-                    {formatDuration(exec.durationMs)}
-                  </div>
-
-                  <div className="text-xs flex-shrink-0 w-28 text-right" style={{ color: 'var(--color-secondary)' }}>
-                    {formatTime(exec.startedAt)}
+                  <div className="flex flex-row sm:flex-col items-start sm:items-end gap-3 sm:gap-1 text-xs" style={{ color: 'var(--color-secondary)' }}>
+                    <span className="sm:hidden" aria-label="Workspace">{exec.workspaceName}</span>
+                    <span className="hidden sm:inline">{exec.workspaceName}</span>
+                    <span className="font-mono w-16 sm:w-auto sm:text-right">{formatDuration(exec.durationMs)}</span>
+                    <span className="w-28 sm:w-auto sm:text-right">{formatTime(exec.startedAt)}</span>
                   </div>
 
                   <span
-                    className="text-sm flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="text-sm flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block"
                     style={{ color: 'var(--color-primary)' }}
+                    aria-hidden="true"
                   >
                     &rarr;
                   </span>

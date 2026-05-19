@@ -110,7 +110,7 @@ export function LoadingState({ type, count = 4 }: LoadingStateProps) {
 
   if (type === 'cards') {
     return (
-      <div className="kpi-grid">
+      <div className="kpi-grid" aria-busy="true" aria-label="Loading content">
         {Array.from({ length: n }, (_, i) => (
           <SkeletonCard key={i} />
         ))}
@@ -126,6 +126,8 @@ export function LoadingState({ type, count = 4 }: LoadingStateProps) {
           background: 'var(--color-surface)',
           border: '1px solid var(--color-outline-variant)',
         }}
+        aria-busy="true"
+        aria-label="Loading content"
       >
         {Array.from({ length: n }, (_, i) => (
           <SkeletonRow key={i} />
@@ -134,5 +136,9 @@ export function LoadingState({ type, count = 4 }: LoadingStateProps) {
     );
   }
 
-  return <SkeletonDetail />;
+  return (
+    <div aria-busy="true" aria-label="Loading content">
+      <SkeletonDetail />
+    </div>
+  );
 }

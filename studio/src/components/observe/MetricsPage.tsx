@@ -203,7 +203,7 @@ function ExecutionsTab({ metrics }: { metrics: AggregatedMetrics }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Total Executions" value={totalExecutions} />
         <StatCard
           label="Success Rate"
@@ -298,7 +298,7 @@ function WorkflowsTab({ metrics }: { metrics: AggregatedMetrics }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Unique Workflows" value={totalWorkflows} />
         <StatCard label="Total Runs" value={totalRuns} />
         <StatCard
@@ -388,7 +388,7 @@ function AgentsTab({ metrics }: { metrics: AggregatedMetrics }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Active Agents" value={totalAgents} />
         <StatCard label="Total Invocations" value={totalInvocations} />
         <StatCard
@@ -465,7 +465,7 @@ function ResourcesTab({ metrics }: { metrics: AggregatedMetrics }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Unique Stages" value={Object.keys(byStage).length} />
         <StatCard label="Total Stage Runs" value={Object.values(byStage).reduce((sum, d) => sum + d.count, 0)} />
         <StatCard label="Total Tokens" value={formatNumber(totalTokens)} />
@@ -551,7 +551,7 @@ function SystemTab() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="MCP Health"
           value={loading ? '...' : (health?.status === 'healthy' ? 'Healthy' : 'Degraded')}

@@ -13,6 +13,7 @@ export function ErrorState({ title, message, onRetry, details }: ErrorStateProps
   return (
     <div
       className="flex flex-col gap-3 p-4 rounded-xl"
+      role="alert"
       style={{
         background: 'var(--color-warning-container)',
         color: 'var(--color-on-warning-container)',

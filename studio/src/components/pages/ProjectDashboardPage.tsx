@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useDashboard } from '@/hooks/useDashboard';
 import { useDashboardStore } from '@/stores/dashboardStore';
+import { useWorkspaceContext } from '@/hooks/useWorkspaceContext';
 import { KpiGrid } from '@/components/states/KpiGrid';
 import { LoadingState } from '@/components/states/LoadingState';
 import { EmptyState } from '@/components/states/EmptyState';
@@ -40,54 +41,75 @@ export function ProjectDashboardPage() {
     loadingWorkflows,
     errors,
   } = useDashboardStore();
+  const { activeWorkspace } = useWorkspaceContext();
   const [timeWindow, setTimeWindow] = useState<TimeWindow>('24h');
+
+  const isAllWorkspaces = activeWorkspace === null;
+
+  const filteredExecutions = isAllWorkspaces
+    ? recentExecutions
+    : recentExecutions.filter((e) => e.workspaceName === activeWorkspace.name);
+
+  const filteredWorkspaces = isAllWorkspaces
+    ? workspaces
+    : workspaces.filter((ws) => ws.name === activeWorkspace.name);
+
+  const filteredHealth = isAllWorkspaces
+    ? health
+    : {
+        ...health,
+        activeExecutions: filteredExecutions.filter((e) => e.status === 'running').length,
+        failedExecutions: filteredExecutions.filter((e) => e.status === 'failed').length,
+        successRate: calculateSuccessRate(filteredExecutions),
+        queued: filteredExecutions.filter((e) => e.status === 'pending').length,
+      };
 
   const kpiItems = [
     {
       icon: <PulseIcon />,
-      value: health.activeExecutions,
+      value: filteredHealth.activeExecutions,
       label: 'Active',
       status: 'default' as const,
       loading: loading,
     },
     {
       icon: <XCircleIcon />,
-      value: health.failedExecutions,
+      value: filteredHealth.failedExecutions,
       label: 'Failed',
       status: 'error' as const,
       loading: loading,
     },
     {
       icon: <CheckCircleIcon />,
-      value: `${health.successRate}%`,
+      value: `${filteredHealth.successRate}%`,
       label: 'Success Rate',
       status: 'success' as const,
       loading: loading,
     },
     {
       icon: <ClockIcon />,
-      value: health.avgDurationMs > 0 ? `${(health.avgDurationMs / 1000).toFixed(1)}s` : '--',
+      value: filteredHealth.avgDurationMs > 0 ? `${(filteredHealth.avgDurationMs / 1000).toFixed(1)}s` : '--',
       label: 'Avg Duration',
       status: 'default' as const,
       loading: loading,
     },
     {
       icon: <QueueIcon />,
-      value: health.queued,
+      value: filteredHealth.queued,
       label: 'Queued',
       status: 'warning' as const,
       loading: loading,
     },
     {
       icon: <ArtifactIcon />,
-      value: health.artifactCount,
+      value: filteredHealth.artifactCount,
       label: 'Artifacts',
       status: 'info' as const,
       loading: loading,
     },
     {
       icon: <AlertIcon />,
-      value: health.openAlerts,
+      value: filteredHealth.openAlerts,
       label: 'Open Alerts',
       status: 'error' as const,
       loading: loading,
@@ -103,6 +125,7 @@ export function ProjectDashboardPage() {
         timeWindow={timeWindow}
         onTimeWindowChange={setTimeWindow}
         onRefresh={refetch}
+        activeWorkspaceName={activeWorkspace?.name}
       />
 
       <section aria-labelledby="kpi-summary-title">
@@ -115,14 +138,14 @@ export function ProjectDashboardPage() {
       </section>
 
       <WorkspacesPanel
-        workspaces={workspaces}
+        workspaces={filteredWorkspaces}
         loading={loadingWorkspaces}
         error={errors.workspaces}
         onRetry={refetch}
       />
 
       <RecentExecutionsPanel
-        executions={recentExecutions}
+        executions={filteredExecutions}
         loading={loadingExecutions}
         error={errors.executions}
         onRetry={refetch}
@@ -139,6 +162,12 @@ export function ProjectDashboardPage() {
   );
 }
 
+function calculateSuccessRate(executions: AgentExecutionRow[]): number {
+  if (executions.length === 0) return 0;
+  const completed = executions.filter((e) => e.status === 'completed').length;
+  return Math.round((completed / executions.length) * 100);
+}
+
 function DashboardHeader({
   projectName,
   projectId,
@@ -146,6 +175,7 @@ function DashboardHeader({
   timeWindow,
   onTimeWindowChange,
   onRefresh,
+  activeWorkspaceName,
 }: {
   projectName: string;
   projectId: string;
@@ -153,6 +183,7 @@ function DashboardHeader({
   timeWindow: TimeWindow;
   onTimeWindowChange: (w: TimeWindow) => void;
   onRefresh: () => void;
+  activeWorkspaceName?: string;
 }) {
   return (
     <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -161,13 +192,13 @@ function DashboardHeader({
           className="text-xl font-semibold"
           style={{ color: 'var(--color-on-surface)' }}
         >
-          {projectName} Dashboard
+          {activeWorkspaceName ? `${activeWorkspaceName} Dashboard` : `${projectName} Dashboard`}
         </h1>
         <p
           className="text-sm mt-1"
           style={{ color: 'var(--color-on-surface-variant)' }}
         >
-          Project: {projectId || 'Overview'}
+          {activeWorkspaceName ? `Workspace: ${activeWorkspaceName}` : `Project: ${projectId || 'Overview'}`}
         </p>
       </div>
       <div className="flex items-center gap-3 flex-wrap">

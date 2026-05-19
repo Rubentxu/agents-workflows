@@ -1,0 +1,163 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 600;
+  border: none;
+  outline: none;
+  transition:
+    background var(--motion-fast) var(--motion-easing-standard),
+    filter var(--motion-fast) var(--motion-easing-standard),
+    box-shadow var(--motion-fast) var(--motion-easing-standard),
+    border-color var(--motion-fast) var(--motion-easing-standard);
+}
+
+.btn:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--color-primary);
+}
+
+.btn--disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn--loading {
+  cursor: wait;
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.btn__spinner {
+  animation: btn-spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+/* Sizes */
+.btn--sm {
+  padding: var(--space-1) var(--space-3);
+  font: var(--typography-label-medium);
+  min-height: 32px;
+  border-radius: var(--radius-sm);
+}
+
+.btn--md {
+  padding: var(--space-2) var(--space-5);
+  font: var(--typography-label-large);
+  min-height: 40px;
+  border-radius: var(--radius-sm);
+}
+
+.btn--lg {
+  padding: var(--space-3) var(--space-6);
+  font: var(--typography-label-large);
+  min-height: 48px;
+  border-radius: var(--radius-sm);
+}
+
+/* Primary */
+.btn--primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.btn--primary:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+.btn--primary:not(:disabled):active {
+  filter: brightness(0.92);
+}
+
+/* Secondary */
+.btn--secondary {
+  background: transparent;
+  color: var(--color-primary);
+  border: 1px solid var(--color-outline);
+}
+
+.btn--secondary:not(:disabled):hover {
+  background: var(--color-primary-container);
+}
+
+.btn--secondary:not(:disabled):active {
+  background: var(--color-primary-container);
+  filter: brightness(0.94);
+}
+
+/* Tonal */
+.btn--tonal {
+  background: var(--color-primary-container);
+  color: var(--color-on-primary-container);
+}
+
+.btn--tonal:not(:disabled):hover {
+  filter: brightness(0.96);
+}
+
+.btn--tonal:not(:disabled):active {
+  filter: brightness(0.90);
+}
+
+/* Ghost */
+.btn--ghost {
+  background: transparent;
+  color: var(--color-on-surface);
+}
+
+.btn--ghost:not(:disabled):hover {
+  background: var(--color-surface-container-high);
+}
+
+.btn--ghost:not(:disabled):active {
+  background: var(--color-surface-container-highest);
+}
+
+/* Danger */
+.btn--danger {
+  background: var(--color-error);
+  color: #fff;
+}
+
+.btn--danger:not(:disabled):hover {
+  filter: brightness(1.1);
+}
+
+.btn--danger:not(:disabled):active {
+  filter: brightness(0.90);
+}
+
+/* Icon */
+.btn--icon {
+  background: transparent;
+  color: var(--color-on-surface);
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+}
+
+.btn--icon:not(:disabled):hover {
+  background: var(--color-surface-container-high);
+}
+
+.btn--icon:not(:disabled):active {
+  background: var(--color-surface-container-highest);
+}
+
+/* Override icon size so it doesn't get sm/md/lg padding */
+.btn--icon.btn--sm,
+.btn--icon.btn--md,
+.btn--icon.btn--lg {
+  padding: 0;
+  font: inherit;
+}

@@ -1,0 +1,33 @@
+.card--hoverable {
+  transition:
+    background var(--motion-fast) var(--motion-easing-standard),
+    box-shadow var(--motion-fast) var(--motion-easing-standard),
+    border-color var(--motion-fast) var(--motion-easing-standard);
+}
+
+[data-theme="light"] .card--hoverable:hover {
+  box-shadow: var(--elevation-2);
+  border-color: var(--color-outline);
+}
+
+[data-theme="dark"] .card--hoverable:hover {
+  background: var(--color-surface-container-high);
+  border-color: var(--color-outline);
+}
+
+.card--clickable {
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  display: block;
+  font: inherit;
+  color: inherit;
+}
+
+.card--clickable:hover {
+  outline: none;
+}
+
+.card--clickable:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--color-primary);
+}

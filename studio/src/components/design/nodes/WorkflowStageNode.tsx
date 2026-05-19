@@ -23,8 +23,8 @@ function WorkflowStageNodeComponent(props: NodeProps) {
     <div
       className={`relative px-4 py-3 min-w-[180px] rounded-lg border-2 transition-all ${
         selected
-          ? 'border-accent bg-accent/10 shadow-lg shadow-accent/20'
-          : 'border-border-default bg-bg-surface hover:border-accent/50'
+          ? 'border-primary bg-primary/10 shadow-lg shadow-accent/20'
+          : 'border-outline bg-surface hover:border-primary/50'
       }`}
     >
       {/* Input handle (top) */}
@@ -32,20 +32,20 @@ function WorkflowStageNodeComponent(props: NodeProps) {
         <Handle
           type="target"
           position={Position.Top}
-          className="!w-2.5 !h-2.5 !bg-accent !border-2 !border-bg-surface"
+          className="!w-2.5 !h-2.5 !bg-primary !border-2 !border-bg-surface"
         />
       )}
 
       {/* Stage header */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-semibold text-text-primary truncate">{data.label}</div>
+          <div className="text-xs font-semibold text-on-surface truncate">{data.label}</div>
           {data.description && (
-            <div className="text-[10px] text-text-muted mt-0.5 line-clamp-2">{data.description}</div>
+            <div className="text-[10px] text-secondary mt-0.5 line-clamp-2">{data.description}</div>
           )}
         </div>
         {data.executionMode && (
-          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-bg-elevated text-text-secondary border border-border-subtle flex-shrink-0">
+          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-surface-container text-secondary border border-outline-variant flex-shrink-0">
             {data.executionMode}
           </span>
         )}
@@ -54,16 +54,16 @@ function WorkflowStageNodeComponent(props: NodeProps) {
       {/* Agent */}
       {data.agent && (
         <div className="mt-2 flex items-center gap-1">
-          <span className="text-[9px] text-text-muted">Agent:</span>
-          <span className="text-[9px] text-accent font-mono truncate">{data.agent.split('/').pop()}</span>
+          <span className="text-[9px] text-secondary">Agent:</span>
+          <span className="text-[9px] text-primary font-mono truncate">{data.agent.split('/').pop()}</span>
         </div>
       )}
 
       {/* Dependencies */}
       {data.dependsOn && data.dependsOn.length > 0 && (
         <div className="mt-1.5 flex items-center gap-1">
-          <span className="text-[9px] text-text-muted">deps:</span>
-          <span className="text-[9px] text-text-secondary">{data.dependsOn.length}</span>
+          <span className="text-[9px] text-secondary">deps:</span>
+          <span className="text-[9px] text-secondary">{data.dependsOn.length}</span>
         </div>
       )}
 
@@ -71,7 +71,7 @@ function WorkflowStageNodeComponent(props: NodeProps) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!w-2.5 !h-2.5 !bg-accent !border-2 !border-bg-surface"
+        className="!w-2.5 !h-2.5 !bg-primary !border-2 !border-bg-surface"
       />
     </div>
   );

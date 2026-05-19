@@ -1,10 +1,3 @@
-/**
- * AgentExecutionDetailPage — /studio/projects/:projectId/observe/agent-executions/:executionId
- * Full detail view for a single agent execution.
- * Behaves like a timeline/debugger — shows observed behavior, not workflow definition.
- * "Agent Execution Graph is observed behavior and is separate from the Workflow DAG definition."
- */
-
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -18,6 +11,9 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { useExecutionApi } from '@/hooks/useExecutionApi';
+import { LoadingState } from '@/components/states/LoadingState';
+import { EmptyState } from '@/components/states/EmptyState';
+import { ErrorState } from '@/components/states/ErrorState';
 import type { AgentExecutionRow } from '@/types/dashboard';
 
 type Tab = 'overview' | 'graph' | 'artifacts' | 'insights' | 'errors' | 'metrics' | 'events';
@@ -36,6 +32,22 @@ interface ExecutionGraph {
   nodes: StageExecutionNode[];
   edges: Array<{ from: string; to: string }>;
 }
+
+const STATUS_NODE_STYLES: Record<string, { bg: string; border: string }> = {
+  completed: { bg: 'var(--color-success-container)', border: 'var(--color-success)' },
+  failed: { bg: 'var(--color-error-container)', border: 'var(--color-color-error)' },
+  running: { bg: 'var(--color-info-container)', border: 'var(--color-info)' },
+  pending: { bg: 'var(--color-surface-container-high)', border: 'var(--color-outline)' },
+  skipped: { bg: 'var(--color-surface-container)', border: 'var(--color-outline-variant)' },
+};
+
+const STATUS_DOT_COLORS: Record<string, string> = {
+  completed: 'var(--color-success)',
+  failed: 'var(--color-error)',
+  running: 'var(--color-info)',
+  pending: 'var(--color-warning)',
+  skipped: 'var(--color-secondary)',
+};
 
 export function AgentExecutionDetailPage() {
   const { projectId, executionId } = useParams();
@@ -61,8 +73,6 @@ export function AgentExecutionDetailPage() {
       }
       setExecution(exec);
 
-      // Build mock observed graph from execution data
-      // In production this would come from execution details API
       const mockGraph: ExecutionGraph = {
         nodes: [
           { id: '1', stageId: 'explore', status: 'completed', durationMs: 1200 },
@@ -86,33 +96,22 @@ export function AgentExecutionDetailPage() {
 
   useEffect(() => { fetchExecution(); }, [fetchExecution]);
 
-  // Build ReactFlow nodes from execution graph
-  const rfNodes: Node[] = (graph?.nodes ?? []).map((n, i) => ({
-    id: n.id,
-    type: 'default',
-    position: { x: (i % 3) * 250, y: Math.floor(i / 3) * 150 },
-    data: {
-      label: n.stageId,
-      status: n.status,
-      durationMs: n.durationMs,
-      error: n.error,
-    },
-    style: {
-      background: n.status === 'completed' ? 'rgba(34,197,94,0.1)' :
-                  n.status === 'failed' ? 'rgba(239,68,68,0.1)' :
-                  n.status === 'running' ? 'rgba(59,130,246,0.1)' :
-                  'rgba(107,114,128,0.1)',
-      border: `2px solid ${
-        n.status === 'completed' ? '#22c55e' :
-        n.status === 'failed' ? '#ef4444' :
-        n.status === 'running' ? '#3b82f6' :
-        '#6b7280'
-      }`,
-      borderRadius: '8px',
-      padding: '12px',
-      minWidth: '140px',
-    },
-  }));
+  const rfNodes: Node[] = (graph?.nodes ?? []).map((n, i) => {
+    const style = STATUS_NODE_STYLES[n.status] ?? STATUS_NODE_STYLES.pending;
+    return {
+      id: n.id,
+      type: 'default',
+      position: { x: (i % 3) * 250, y: Math.floor(i / 3) * 150 },
+      data: { label: n.stageId, status: n.status, durationMs: n.durationMs, error: n.error },
+      style: {
+        background: style.bg,
+        border: `2px solid ${style.border}`,
+        borderRadius: '8px',
+        padding: '12px',
+        minWidth: '140px',
+      },
+    };
+  });
 
   const rfEdges: Edge[] = (graph?.edges ?? []).map((e) => ({
     id: `${e.from}-${e.to}`,
@@ -120,19 +119,11 @@ export function AgentExecutionDetailPage() {
     target: e.to,
     type: 'smoothstep',
     animated: graph?.nodes.find(n => n.id === e.to)?.status === 'running',
-    style: { strokeWidth: 2 },
+    style: { strokeWidth: 2, stroke: 'var(--color-outline)' },
   }));
 
-  const statusColor = (status: string) => ({
-    completed: 'text-green-400',
-    failed: 'text-red-400',
-    running: 'text-blue-400',
-    pending: 'text-yellow-400',
-    skipped: 'text-text-muted',
-  }[status] ?? 'text-text-muted');
-
   const formatDuration = (ms?: number) => {
-    if (!ms) return '—';
+    if (!ms) return '\u2014';
     if (ms < 1000) return `${ms}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
     return `${(ms / 60000).toFixed(1)}m`;
@@ -140,40 +131,78 @@ export function AgentExecutionDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <span className="text-text-muted text-sm animate-pulse">Loading execution...</span>
+      <div className="flex items-center justify-center h-full p-6">
+        <div className="w-full max-w-2xl">
+          <LoadingState type="detail" />
+        </div>
       </div>
     );
   }
 
+  if (error && !execution) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <div className="w-full max-w-2xl">
+          <ErrorState
+            title="Failed to load execution"
+            message={error}
+            onRetry={fetchExecution}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const statusColorForExec = (status: string) =>
+    STATUS_DOT_COLORS[status] ?? STATUS_DOT_COLORS.skipped;
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-border-subtle bg-bg-elevated/30">
+      <div
+        className="flex items-center justify-between px-6 py-3"
+        style={{
+          borderBottom: '1px solid var(--color-outline-variant)',
+          background: 'var(--color-surface-container-low)',
+        }}
+      >
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate(`/studio/projects/${projectId}/observe/agent-executions`)}
-            className="text-text-muted hover:text-text-primary transition-colors text-sm"
+            className="text-sm transition-colors"
+            style={{ color: 'var(--color-secondary)' }}
           >
-            ← Agent Executions
+            &larr; Agent Executions
           </button>
-          <div className="w-px h-4 bg-border-subtle" />
+          <div style={{ width: '1px', height: '16px', background: 'var(--color-outline-variant)' }} />
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-semibold text-text-primary font-mono truncate max-w-md">
+              <h1
+                className="text-base font-semibold font-mono truncate max-w-md"
+                style={{ color: 'var(--color-on-surface)' }}
+              >
                 {executionId}
               </h1>
               {execution && (
-                <span className={`text-xs font-medium px-2 py-0.5 rounded border capitalize ${statusColor(execution.status)} border-current`}>
+                <span
+                  className="text-xs font-medium px-2 py-0.5 rounded capitalize"
+                  style={{
+                    color: statusColorForExec(execution.status),
+                    border: `1px solid ${statusColorForExec(execution.status)}`,
+                  }}
+                >
                   {execution.status}
                 </span>
               )}
             </div>
             {execution && (
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs text-text-muted font-mono truncate max-w-xs">{execution.workflowArn}</span>
-                <span className="text-text-muted">·</span>
-                <span className="text-xs text-text-muted">{execution.workspaceName}</span>
+                <span className="text-xs font-mono truncate max-w-xs" style={{ color: 'var(--color-secondary)' }}>
+                  {execution.workflowArn}
+                </span>
+                <span style={{ color: 'var(--color-outline)' }}>&middot;</span>
+                <span className="text-xs" style={{ color: 'var(--color-secondary)' }}>
+                  {execution.workspaceName}
+                </span>
               </div>
             )}
           </div>
@@ -181,13 +210,14 @@ export function AgentExecutionDetailPage() {
 
         <div className="flex items-center gap-2">
           {execution?.durationMs && (
-            <span className="text-xs text-text-muted font-mono">
+            <span className="text-xs font-mono" style={{ color: 'var(--color-secondary)' }}>
               {formatDuration(execution.durationMs)}
             </span>
           )}
           <button
             onClick={fetchExecution}
-            className="px-3 py-1.5 text-xs border border-border-default rounded hover:bg-bg-elevated text-text-secondary"
+            className="px-3 py-1.5 text-xs rounded transition-colors"
+            style={{ border: '1px solid var(--color-outline)', color: 'var(--color-on-surface)' }}
           >
             Refresh
           </button>
@@ -195,45 +225,68 @@ export function AgentExecutionDetailPage() {
       </div>
 
       {error && (
-        <div className="mx-6 mt-4 p-3 bg-accent-error/10 border border-accent-error/20 rounded text-accent-error text-sm">{error}</div>
+        <div className="mx-6 mt-4">
+          <ErrorState title="Error" message={error} onRetry={fetchExecution} />
+        </div>
       )}
 
-      {/* Tab nav */}
-      <div className="flex px-6 border-b border-border-subtle bg-bg-elevated/20 overflow-x-auto">
+      <div
+        className="flex px-6 overflow-x-auto"
+        style={{
+          borderBottom: '1px solid var(--color-outline-variant)',
+          background: 'var(--color-surface-container-low)',
+        }}
+      >
         {(['overview', 'graph', 'artifacts', 'insights', 'errors', 'metrics', 'events'] as Tab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === tab ? 'border-accent text-accent' : 'border-transparent text-text-secondary hover:text-text-primary'
-            }`}
+            className="px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
+            style={{
+              borderBottomColor: activeTab === tab ? 'var(--color-primary)' : 'transparent',
+              color: activeTab === tab ? 'var(--color-primary)' : 'var(--color-secondary)',
+            }}
           >
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
       </div>
 
-      {/* Tab content */}
       <div className="flex-1 overflow-auto">
         {activeTab === 'overview' && execution && (
           <div className="p-6 space-y-6">
-            {/* Summary cards */}
             <div className="grid grid-cols-3 gap-4">
               {[
                 { label: 'Status', value: execution.status },
                 { label: 'Duration', value: formatDuration(execution.durationMs) },
                 { label: 'Started', value: new Date(execution.startedAt).toLocaleString() },
               ].map(({ label, value }) => (
-                <div key={label} className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-                  <div className="text-xs text-text-muted mb-1">{label}</div>
-                  <div className="text-sm font-medium text-text-primary capitalize">{value}</div>
+                <div
+                  key={label}
+                  className="rounded-lg p-4"
+                  style={{
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-outline-variant)',
+                  }}
+                >
+                  <div className="text-xs mb-1" style={{ color: 'var(--color-secondary)' }}>{label}</div>
+                  <div className="text-sm font-medium capitalize" style={{ color: 'var(--color-on-surface)' }}>
+                    {value}
+                  </div>
                 </div>
               ))}
             </div>
 
-            {/* Resource references */}
-            <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-              <h3 className="text-xs font-semibold text-text-muted uppercase mb-3">Resource References</h3>
+            <div
+              className="rounded-lg p-4"
+              style={{
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-outline-variant)',
+              }}
+            >
+              <h3 className="text-xs font-semibold uppercase mb-3" style={{ color: 'var(--color-secondary)' }}>
+                Resource References
+              </h3>
               <div className="space-y-2">
                 {[
                   { label: 'Workflow', value: execution.workflowArn },
@@ -241,46 +294,68 @@ export function AgentExecutionDetailPage() {
                   { label: 'Workspace', value: execution.workspaceName },
                 ].map(({ label, value }) => (
                   <div key={label} className="flex items-center gap-3">
-                    <span className="text-xs text-text-muted w-20">{label}</span>
-                    <span className="text-xs font-mono text-accent truncate">{value}</span>
+                    <span className="text-xs w-20" style={{ color: 'var(--color-secondary)' }}>{label}</span>
+                    <span className="text-xs font-mono truncate" style={{ color: 'var(--color-primary)' }}>
+                      {value}
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Stage timeline */}
             {graph && (
-              <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-                <h3 className="text-xs font-semibold text-text-muted uppercase mb-3">Stage Timeline</h3>
+              <div
+                className="rounded-lg p-4"
+                style={{
+                  background: 'var(--color-surface)',
+                  border: '1px solid var(--color-outline-variant)',
+                }}
+              >
+                <h3 className="text-xs font-semibold uppercase mb-3" style={{ color: 'var(--color-secondary)' }}>
+                  Stage Timeline
+                </h3>
                 <div className="space-y-2">
-                  {graph.nodes.map((node, i) => (
-                    <div key={node.id} className="flex items-center gap-4">
-                      {/* Connector line */}
-                      <div className="w-4 flex justify-center">
-                        {i < graph.nodes.length - 1 && (
-                          <div className="w-px h-6 bg-border-subtle" />
-                        )}
+                  {graph.nodes.map((node, i) => {
+                    const ns = STATUS_NODE_STYLES[node.status] ?? STATUS_NODE_STYLES.pending;
+                    return (
+                      <div key={node.id} className="flex items-center gap-4">
+                        <div className="w-4 flex justify-center">
+                          {i < graph.nodes.length - 1 && (
+                            <div style={{ width: '1px', height: '24px', background: 'var(--color-outline-variant)' }} />
+                          )}
+                        </div>
+                        <div
+                          className="flex-1 flex items-center gap-3 px-3 py-2 rounded"
+                          style={{
+                            border: `1px solid ${ns.border}`,
+                            background: ns.bg,
+                          }}
+                        >
+                          <div
+                            className={`w-2 h-2 rounded-full ${node.status === 'running' ? 'animate-pulse' : ''}`}
+                            style={{ background: STATUS_DOT_COLORS[node.status] ?? STATUS_DOT_COLORS.skipped }}
+                          />
+                          <span className="text-sm font-medium flex-1" style={{ color: 'var(--color-on-surface)' }}>
+                            {node.stageId}
+                          </span>
+                          {node.durationMs && (
+                            <span className="text-xs font-mono" style={{ color: 'var(--color-secondary)' }}>
+                              {formatDuration(node.durationMs)}
+                            </span>
+                          )}
+                          {node.error && (
+                            <span className="text-xs" style={{ color: 'var(--color-error)' }}>{node.error}</span>
+                          )}
+                          <span
+                            className="text-[10px] font-medium capitalize"
+                            style={{ color: STATUS_DOT_COLORS[node.status] ?? STATUS_DOT_COLORS.skipped }}
+                          >
+                            {node.status}
+                          </span>
+                        </div>
                       </div>
-                      {/* Node */}
-                      <div className={`flex-1 flex items-center gap-3 px-3 py-2 rounded border ${
-                        node.status === 'completed' ? 'border-green-400/30 bg-green-400/5' :
-                        node.status === 'failed' ? 'border-red-400/30 bg-red-400/5' :
-                        node.status === 'running' ? 'border-blue-400/30 bg-blue-400/5' :
-                        'border-border-subtle bg-bg-elevated/30'
-                      }`}>
-                        <div className={`w-2 h-2 rounded-full ${
-                          node.status === 'completed' ? 'bg-green-400' :
-                          node.status === 'failed' ? 'bg-red-400' :
-                          node.status === 'running' ? 'bg-blue-400 animate-pulse' :
-                          'bg-text-muted'
-                        }`} />
-                        <span className="text-sm font-medium text-text-primary flex-1">{node.stageId}</span>
-                        {node.durationMs && <span className="text-xs text-text-muted font-mono">{formatDuration(node.durationMs)}</span>}
-                        {node.error && <span className="text-xs text-red-400">{node.error}</span>}
-                        <span className={`text-[10px] font-medium capitalize ${statusColor(node.status)}`}>{node.status}</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -288,57 +363,90 @@ export function AgentExecutionDetailPage() {
         )}
 
         {activeTab === 'graph' && (
-          <div className="h-full">
+          <div className="h-full" style={{ background: 'var(--color-background)' }}>
             <ReactFlow
               nodes={rfNodes}
               edges={rfEdges}
               fitView
-              className="bg-bg-canvas"
             >
-              <Background gap={16} color="var(--color-border-subtle)" />
-              <Controls className="!border-border-subtle !bg-bg-surface" />
-              <MiniMap className="!border-border-subtle !bg-bg-surface" />
+              <Background gap={16} color="var(--color-outline-variant)" />
+              <Controls />
+              <MiniMap />
             </ReactFlow>
           </div>
         )}
 
         {activeTab === 'artifacts' && (
           <div className="p-6">
-            <div className="bg-bg-surface border border-border-subtle rounded-lg p-8 text-center">
-              <p className="text-text-muted text-sm">No artifacts yet.</p>
-            </div>
+            <EmptyState
+              icon={
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <rect x="3" y="2" width="14" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M7 6h6M7 9h6M7 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              }
+              title="No artifacts yet"
+              description="Artifacts produced during execution stages will appear here."
+            />
           </div>
         )}
 
         {activeTab === 'insights' && (
           <div className="p-6">
-            <div className="bg-bg-surface border border-border-subtle rounded-lg p-8 text-center">
-              <p className="text-text-muted text-sm">No insights recorded for this execution.</p>
-            </div>
+            <EmptyState
+              icon={
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M10 7v3l2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              }
+              title="No insights recorded"
+              description="Insights from this execution's stages will appear here once available."
+            />
           </div>
         )}
 
         {activeTab === 'errors' && (
           <div className="p-6">
-            <div className="bg-bg-surface border border-border-subtle rounded-lg p-8 text-center">
-              <p className="text-text-muted text-sm">No errors recorded.</p>
-            </div>
+            <EmptyState
+              icon={
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M10 7v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <circle cx="10" cy="13.5" r="0.75" fill="currentColor" />
+                </svg>
+              }
+              title="No errors recorded"
+              description="This execution completed without errors."
+            />
           </div>
         )}
 
         {activeTab === 'metrics' && (
           <div className="p-6">
-            <div className="bg-bg-surface border border-border-subtle rounded-lg p-8 text-center">
-              <p className="text-text-muted text-sm">Metrics view — coming soon.</p>
-            </div>
+            <EmptyState
+              icon={
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <path d="M4 16V8M8 16V4M12 16V10M16 16V6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              }
+              title="Metrics coming soon"
+              description="Execution-level metrics visualization is under development."
+            />
           </div>
         )}
 
         {activeTab === 'events' && (
           <div className="p-6">
-            <div className="bg-bg-surface border border-border-subtle rounded-lg p-8 text-center">
-              <p className="text-text-muted text-sm">Raw events — coming soon.</p>
-            </div>
+            <EmptyState
+              icon={
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <path d="M4 5h12M4 10h12M4 15h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              }
+              title="Raw events coming soon"
+              description="A raw event timeline for this execution is under development."
+            />
           </div>
         )}
       </div>

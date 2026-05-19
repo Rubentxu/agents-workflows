@@ -109,17 +109,17 @@ export function WorkflowYamlEditor({ workflow, onChange }: WorkflowYamlEditorPro
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border-subtle bg-bg-elevated/30">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-outline-variant bg-surface-container/30">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-text-muted">Raw YAML</span>
+          <span className="text-xs text-secondary">Raw YAML</span>
           {parseError && (
-            <span className="text-[10px] text-accent-error">• {parseError}</span>
+            <span className="text-[10px] text-error">• {parseError}</span>
           )}
         </div>
         <button
           onClick={handleApply}
           disabled={!!parseError}
-          className="px-3 py-1 text-xs bg-accent text-white rounded hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-3 py-1 text-xs bg-primary text-on-primary rounded hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Apply changes
         </button>
@@ -130,7 +130,7 @@ export function WorkflowYamlEditor({ workflow, onChange }: WorkflowYamlEditorPro
         <textarea
           value={yamlContent}
           onChange={(e) => setYamlContent(e.target.value)}
-          className="w-full h-full min-h-[400px] text-xs font-mono bg-bg-elevated border border-border-subtle rounded px-4 py-3 text-text-primary outline-none focus:border-accent resize-none leading-relaxed"
+          className="w-full h-full min-h-[400px] text-xs font-mono bg-surface-container border border-outline-variant rounded px-4 py-3 text-on-surface outline-none focus:border-primary resize-none leading-relaxed"
           spellCheck={false}
         />
       </div>

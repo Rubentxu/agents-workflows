@@ -27,8 +27,8 @@ export function AdminPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-text-primary">Admin</h1>
-          <p className="text-sm text-text-muted mt-1">
+          <h1 className="text-lg font-semibold text-on-surface">Admin</h1>
+          <p className="text-sm text-secondary mt-1">
             Project: {projectId}
           </p>
         </div>
@@ -56,7 +56,7 @@ function TabNav({ currentTab, projectId }: { currentTab: AdminTab; projectId: st
   ];
 
   return (
-    <div className="border-b border-border-subtle">
+    <div className="border-b border-outline-variant">
       <nav className="flex gap-1">
         {tabs.map((tab) => (
           <a
@@ -64,8 +64,8 @@ function TabNav({ currentTab, projectId }: { currentTab: AdminTab; projectId: st
             href={tab.path}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               currentTab === tab.id
-                ? 'border-accent text-accent'
-                : 'border-transparent text-text-muted hover:text-text-primary hover:border-border-default'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-secondary hover:text-on-surface hover:border-outline'
             }`}
           >
             {tab.label}
@@ -120,12 +120,12 @@ function WorkspacesTab() {
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div>
-          {loading && <span className="text-xs text-text-muted animate-pulse">Loading...</span>}
-          {error && <span className="text-xs text-accent-error">{error}</span>}
+          {loading && <span className="text-xs text-secondary animate-pulse">Loading...</span>}
+          {error && <span className="text-xs text-error">{error}</span>}
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-accent text-white text-sm font-medium rounded hover:bg-accent/90 transition-colors"
+          className="px-4 py-2 bg-primary text-on-primary text-sm font-medium rounded hover:bg-primary/90 transition-colors"
         >
           Create Workspace
         </button>
@@ -135,37 +135,37 @@ function WorkspacesTab() {
       {workspaces.length === 0 && !loading ? (
         <EmptyState message="No workspaces found. Create one to get started." />
       ) : (
-        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+        <div className="bg-surface border border-outline-variant rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border-subtle">
-                <th className="text-left px-4 py-3 text-text-muted font-medium text-xs">Name</th>
-                <th className="text-left px-4 py-3 text-text-muted font-medium text-xs">ID</th>
-                <th className="text-left px-4 py-3 text-text-muted font-medium text-xs">Created</th>
-                <th className="text-left px-4 py-3 text-text-muted font-medium text-xs">Actions</th>
+              <tr className="border-b border-outline-variant">
+                <th className="text-left px-4 py-3 text-secondary font-medium text-xs">Name</th>
+                <th className="text-left px-4 py-3 text-secondary font-medium text-xs">ID</th>
+                <th className="text-left px-4 py-3 text-secondary font-medium text-xs">Created</th>
+                <th className="text-left px-4 py-3 text-secondary font-medium text-xs">Actions</th>
               </tr>
             </thead>
             <tbody>
               {workspaces.map((ws) => (
-                <tr key={ws.id} className="border-b border-border-subtle last:border-0 hover:bg-bg-elevated/50 transition-colors">
+                <tr key={ws.id} className="border-b border-outline-variant last:border-0 hover:bg-surface-container/50 transition-colors">
                   <td className="px-4 py-3">
-                    <div className="font-medium text-text-primary">{ws.name}</div>
+                    <div className="font-medium text-on-surface">{ws.name}</div>
                     {ws.description && (
-                      <div className="text-xs text-text-muted mt-0.5">{ws.description}</div>
+                      <div className="text-xs text-secondary mt-0.5">{ws.description}</div>
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="font-mono text-xs text-text-muted">{ws.id}</span>
+                    <span className="font-mono text-xs text-secondary">{ws.id}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-xs text-text-muted">
+                    <span className="text-xs text-secondary">
                       {new Date(ws.created_at).toLocaleDateString()}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <button
                       onClick={() => setDeleteTarget(ws)}
-                      className="text-xs text-accent-error hover:text-accent-error/80 transition-colors"
+                      className="text-xs text-error hover:text-error/80 transition-colors"
                     >
                       Delete
                     </button>
@@ -220,21 +220,21 @@ function CreateWorkspaceModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/50" />
+      <div className="absolute inset-0 bg-scrim" />
       <div
-        className="relative w-full max-w-md bg-bg-surface border border-border-default rounded-xl shadow-2xl overflow-hidden"
+        className="relative w-full max-w-md bg-surface border border-outline rounded-xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
-          <h2 className="text-base font-semibold text-text-primary">Create Workspace</h2>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors text-lg">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant">
+          <h2 className="text-base font-semibold text-on-surface">Create Workspace</h2>
+          <button onClick={onClose} className="text-secondary hover:text-on-surface transition-colors text-lg">
             ✕
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-1.5">
-              Name <span className="text-accent-error">*</span>
+            <label className="block text-sm font-medium text-on-surface mb-1.5">
+              Name <span className="text-error">*</span>
             </label>
             <input
               type="text"
@@ -242,11 +242,11 @@ function CreateWorkspaceModal({
               onChange={(e) => setName(e.target.value)}
               placeholder="my-workspace"
               required
-              className="w-full px-3 py-2 bg-bg-elevated border border-border-default rounded text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+              className="w-full px-3 py-2 bg-surface-container border border-outline rounded text-sm text-on-surface placeholder:text-secondary focus:outline-none focus:border-primary"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-1.5">
+            <label className="block text-sm font-medium text-on-surface mb-1.5">
               Description
             </label>
             <textarea
@@ -254,21 +254,21 @@ function CreateWorkspaceModal({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional workspace description"
               rows={3}
-              className="w-full px-3 py-2 bg-bg-elevated border border-border-default rounded text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent resize-none"
+              className="w-full px-3 py-2 bg-surface-container border border-outline rounded text-sm text-on-surface placeholder:text-secondary focus:outline-none focus:border-primary resize-none"
             />
           </div>
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+              className="px-4 py-2 text-sm text-secondary hover:text-on-surface transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading || !name.trim()}
-              className="px-4 py-2 text-sm font-medium bg-accent text-white rounded hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 text-sm font-medium bg-primary text-on-primary rounded hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Creating...' : 'Create'}
             </button>
@@ -292,40 +292,40 @@ function DeleteWorkspaceModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/50" />
+      <div className="absolute inset-0 bg-scrim" />
       <div
-        className="relative w-full max-w-sm bg-bg-surface border border-border-default rounded-xl shadow-2xl overflow-hidden"
+        className="relative w-full max-w-sm bg-surface border border-outline rounded-xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between px-6 py-4 border-b border-border-subtle">
+        <div className="flex items-start justify-between px-6 py-4 border-b border-outline-variant">
           <div>
-            <h2 className="text-base font-semibold text-text-primary">Delete Workspace</h2>
-            <p className="text-xs text-text-muted mt-0.5">This action cannot be undone.</p>
+            <h2 className="text-base font-semibold text-on-surface">Delete Workspace</h2>
+            <p className="text-xs text-secondary mt-0.5">This action cannot be undone.</p>
           </div>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors text-lg">
+          <button onClick={onClose} className="text-secondary hover:text-on-surface transition-colors text-lg">
             ✕
           </button>
         </div>
         <div className="p-6">
-          <p className="text-sm text-text-secondary mb-4">
+          <p className="text-sm text-secondary mb-4">
             Are you sure you want to delete workspace{' '}
-            <strong className="text-text-primary">{workspace.name}</strong>?
+            <strong className="text-on-surface">{workspace.name}</strong>?
           </p>
-          <p className="text-xs text-text-muted mb-6">
+          <p className="text-xs text-secondary mb-6">
             ID: {workspace.id}
           </p>
           <div className="flex items-center justify-end gap-3">
             <button
               onClick={onClose}
               disabled={loading}
-              className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+              className="px-4 py-2 text-sm text-secondary hover:text-on-surface transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={onConfirm}
               disabled={loading}
-              className="px-4 py-2 text-sm font-medium bg-accent-error text-white rounded hover:bg-accent-error/90 transition-colors disabled:opacity-50"
+              className="px-4 py-2 text-sm font-medium bg-error text-on-primary rounded hover:bg-error/90 transition-colors disabled:opacity-50"
             >
               {loading ? 'Deleting...' : 'Delete'}
             </button>
@@ -362,16 +362,16 @@ function SettingsTab() {
 
   if (loading) {
     return (
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-8 text-center">
-        <span className="text-sm text-text-muted animate-pulse">Loading configuration...</span>
+      <div className="bg-surface border border-outline-variant rounded-lg p-8 text-center">
+        <span className="text-sm text-secondary animate-pulse">Loading configuration...</span>
       </div>
     );
   }
 
   if (error || !config) {
     return (
-      <div className="bg-accent-error/5 border border-accent-error/20 rounded-lg p-4 text-center">
-        <p className="text-accent-error text-sm">{error ?? 'Failed to load configuration'}</p>
+      <div className="bg-error/5 border border-primary-error/20 rounded-lg p-4 text-center">
+        <p className="text-error text-sm">{error ?? 'Failed to load configuration'}</p>
       </div>
     );
   }
@@ -390,15 +390,15 @@ function SettingsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+      <div className="bg-surface border border-outline-variant rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <tbody>
             {configItems.map((item, i) => (
-              <tr key={item.label} className={i > 0 ? 'border-t border-border-subtle' : ''}>
-                <td className="px-4 py-3 text-text-muted text-xs font-medium w-64">
+              <tr key={item.label} className={i > 0 ? 'border-t border-outline-variant' : ''}>
+                <td className="px-4 py-3 text-secondary text-xs font-medium w-64">
                   {item.label}
                 </td>
-                <td className={`px-4 py-3 text-text-primary ${item.mono ? 'font-mono text-xs' : ''}`}>
+                <td className={`px-4 py-3 text-on-surface ${item.mono ? 'font-mono text-xs' : ''}`}>
                   {item.value}
                 </td>
               </tr>
@@ -416,10 +416,10 @@ function SettingsTab() {
 
 function IntegrationsTab() {
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-lg p-12 text-center">
+    <div className="bg-surface border border-outline-variant rounded-lg p-12 text-center">
       <div className="text-4xl mb-4 opacity-30">🔌</div>
-      <h3 className="text-base font-medium text-text-primary mb-2">Coming Soon</h3>
-      <p className="text-sm text-text-muted max-w-sm mx-auto">
+      <h3 className="text-base font-medium text-on-surface mb-2">Coming Soon</h3>
+      <p className="text-sm text-secondary max-w-sm mx-auto">
         Integrations with external tools and services will be available here. Stay tuned for updates.
       </p>
     </div>
@@ -433,26 +433,26 @@ function IntegrationsTab() {
 function ProjectsTab({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-4">
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-6">
-        <h3 className="text-sm font-medium text-text-primary mb-4">Current Project</h3>
+      <div className="bg-surface border border-outline-variant rounded-lg p-6">
+        <h3 className="text-sm font-medium text-on-surface mb-4">Current Project</h3>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
-            <span className="text-accent text-lg font-semibold">
+          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+            <span className="text-primary text-lg font-semibold">
               {projectId.charAt(0).toUpperCase()}
             </span>
           </div>
           <div>
-            <div className="font-medium text-text-primary">{projectId}</div>
-            <div className="text-xs text-text-muted font-mono">{projectId}</div>
+            <div className="font-medium text-on-surface">{projectId}</div>
+            <div className="text-xs text-secondary font-mono">{projectId}</div>
           </div>
         </div>
       </div>
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-12 text-center">
+      <div className="bg-surface border border-outline-variant rounded-lg p-12 text-center">
         <div className="text-4xl mb-4 opacity-30">📁</div>
-        <h3 className="text-base font-medium text-text-primary mb-2">Project Management</h3>
-        <p className="text-sm text-text-muted max-w-sm mx-auto">
+        <h3 className="text-base font-medium text-on-surface mb-2">Project Management</h3>
+        <p className="text-sm text-secondary max-w-sm mx-auto">
           Project-level settings and management are handled at the{' '}
-          <a href="/studio/projects" className="text-accent hover:underline">
+          <a href="/studio/projects" className="text-primary hover:underline">
             Projects
           </a>{' '}
           page.
@@ -468,8 +468,8 @@ function ProjectsTab({ projectId }: { projectId: string }) {
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-lg p-8 text-center">
-      <p className="text-text-muted text-sm">{message}</p>
+    <div className="bg-surface border border-outline-variant rounded-lg p-8 text-center">
+      <p className="text-secondary text-sm">{message}</p>
     </div>
   );
 }

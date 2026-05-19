@@ -44,9 +44,9 @@ export function ImpactReviewModal({ isOpen, onClose, onConfirm, impact, action }
   };
 
   const severityColor = {
-    high: 'text-red-400 bg-red-400/10 border-red-400/30',
-    medium: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30',
-    low: 'text-blue-400 bg-blue-400/10 border-blue-400/30',
+    high: 'text-error bg-error/10 border-error/30',
+    medium: 'text-warning bg-warning/10 border-warning/30',
+    low: 'text-info bg-info/10 border-info/30',
   }[impact.severity];
 
   const handleConfirm = async () => {
@@ -62,14 +62,14 @@ export function ImpactReviewModal({ isOpen, onClose, onConfirm, impact, action }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/50" />
+      <div className="absolute inset-0 bg-scrim" />
 
       <div
-        className="relative w-full max-w-lg bg-bg-surface border border-border-default rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+        className="relative w-full max-w-lg bg-surface border border-outline rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between px-6 py-4 border-b border-border-subtle">
+        <div className="flex items-start justify-between px-6 py-4 border-b border-outline-variant">
           <div className="flex items-start gap-3">
             {/* Warning icon */}
             <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border ${severityColor}`}>
@@ -78,15 +78,15 @@ export function ImpactReviewModal({ isOpen, onClose, onConfirm, impact, action }
               </svg>
             </div>
             <div>
-              <h2 className="text-base font-semibold text-text-primary">Impact Review</h2>
-              <p className="text-xs text-text-muted mt-0.5">
+              <h2 className="text-base font-semibold text-on-surface">Impact Review</h2>
+              <p className="text-xs text-secondary mt-0.5">
                 {action === 'delete' ? 'This action cannot be undone.' :
                  action === 'override' ? 'This will create a scoped override.' :
                  'This action may affect dependent resources.'}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors text-lg">✕</button>
+          <button onClick={onClose} className="text-secondary hover:text-on-surface transition-colors text-lg">✕</button>
         </div>
 
         {/* Severity banner */}
@@ -98,25 +98,25 @@ export function ImpactReviewModal({ isOpen, onClose, onConfirm, impact, action }
         {/* Body */}
         <div className="flex-1 overflow-auto p-6 space-y-5">
           {/* Resource being acted on */}
-          <div className="bg-bg-elevated border border-border-subtle rounded-lg p-3">
-            <div className="text-[10px] text-text-muted uppercase mb-1">Target Resource</div>
-            <div className="text-sm font-medium text-text-primary">{impact.resourceName}</div>
-            <div className="text-xs font-mono text-text-muted mt-0.5">{impact.resourceArn}</div>
-            <div className="text-xs text-text-secondary mt-1">{impact.resourceKind}</div>
+          <div className="bg-surface-container border border-outline-variant rounded-lg p-3">
+            <div className="text-[10px] text-secondary uppercase mb-1">Target Resource</div>
+            <div className="text-sm font-medium text-on-surface">{impact.resourceName}</div>
+            <div className="text-xs font-mono text-secondary mt-0.5">{impact.resourceArn}</div>
+            <div className="text-xs text-secondary mt-1">{impact.resourceKind}</div>
           </div>
 
           {/* Dependents */}
           {impact.dependents.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold text-text-muted uppercase mb-2">
+              <h3 className="text-xs font-semibold text-secondary uppercase mb-2">
                 Dependents ({impact.dependents.length})
               </h3>
               <div className="space-y-1.5">
                 {impact.dependents.map((d) => (
-                  <div key={d.id} className="flex items-center gap-2 px-3 py-2 bg-bg-elevated border border-border-subtle rounded text-sm">
-                    <span className="text-[10px] text-text-muted bg-bg-surface px-1.5 py-0.5 rounded border">{d.kind}</span>
-                    <span className="text-text-primary font-medium truncate flex-1">{d.label}</span>
-                    <span className="text-xs font-mono text-text-muted">{d.arn.split('/').pop()}</span>
+                  <div key={d.id} className="flex items-center gap-2 px-3 py-2 bg-surface-container border border-outline-variant rounded text-sm">
+                    <span className="text-[10px] text-secondary bg-surface px-1.5 py-0.5 rounded border">{d.kind}</span>
+                    <span className="text-on-surface font-medium truncate flex-1">{d.label}</span>
+                    <span className="text-xs font-mono text-secondary">{d.arn.split('/').pop()}</span>
                   </div>
                 ))}
               </div>
@@ -126,12 +126,12 @@ export function ImpactReviewModal({ isOpen, onClose, onConfirm, impact, action }
           {/* Affected workspaces */}
           {impact.affectedWorkspaces.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold text-text-muted uppercase mb-2">
+              <h3 className="text-xs font-semibold text-secondary uppercase mb-2">
                 Affected Workspaces ({impact.affectedWorkspaces.length})
               </h3>
               <div className="flex flex-wrap gap-1.5">
                 {impact.affectedWorkspaces.map((ws) => (
-                  <span key={ws} className="text-xs px-2 py-1 bg-bg-elevated border border-border-subtle rounded text-text-secondary">
+                  <span key={ws} className="text-xs px-2 py-1 bg-surface-container border border-outline-variant rounded text-secondary">
                     {ws}
                   </span>
                 ))}
@@ -142,17 +142,17 @@ export function ImpactReviewModal({ isOpen, onClose, onConfirm, impact, action }
           {/* Recent executions */}
           {impact.recentExecutions.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold text-text-muted uppercase mb-2">
+              <h3 className="text-xs font-semibold text-secondary uppercase mb-2">
                 Recent Agent Executions ({impact.recentExecutions.length})
               </h3>
               <div className="space-y-1">
                 {impact.recentExecutions.slice(0, 5).map((ex) => (
-                  <div key={ex.id} className="flex items-center justify-between px-3 py-2 bg-bg-elevated border border-border-subtle rounded text-sm">
-                    <span className="font-mono text-xs text-text-secondary truncate flex-1">{ex.id}</span>
+                  <div key={ex.id} className="flex items-center justify-between px-3 py-2 bg-surface-container border border-outline-variant rounded text-sm">
+                    <span className="font-mono text-xs text-secondary truncate flex-1">{ex.id}</span>
                     <span className={`text-[10px] font-medium ml-2 ${
-                      ex.status === 'completed' ? 'text-green-400' :
-                      ex.status === 'failed' ? 'text-red-400' :
-                      'text-text-muted'
+                      ex.status === 'completed' ? 'text-success' :
+                      ex.status === 'failed' ? 'text-error' :
+                      'text-secondary'
                     }`}>{ex.status}</span>
                   </div>
                 ))}
@@ -163,14 +163,14 @@ export function ImpactReviewModal({ isOpen, onClose, onConfirm, impact, action }
           {/* Derived overrides */}
           {impact.derivedOverrides.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold text-text-muted uppercase mb-2">
+              <h3 className="text-xs font-semibold text-secondary uppercase mb-2">
                 Derived Overrides ({impact.derivedOverrides.length})
               </h3>
               <div className="space-y-1">
                 {impact.derivedOverrides.map((ov) => (
-                  <div key={ov.id} className="flex items-center gap-2 px-3 py-2 bg-bg-elevated border border-border-subtle rounded text-sm">
-                    <span className="text-[10px] text-text-muted">override</span>
-                    <span className="text-text-primary font-medium truncate flex-1">{ov.label}</span>
+                  <div key={ov.id} className="flex items-center gap-2 px-3 py-2 bg-surface-container border border-outline-variant rounded text-sm">
+                    <span className="text-[10px] text-secondary">override</span>
+                    <span className="text-on-surface font-medium truncate flex-1">{ov.label}</span>
                   </div>
                 ))}
               </div>
@@ -180,14 +180,14 @@ export function ImpactReviewModal({ isOpen, onClose, onConfirm, impact, action }
           {/* Policy effects */}
           {impact.policyEffects.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold text-text-muted uppercase mb-2">
+              <h3 className="text-xs font-semibold text-secondary uppercase mb-2">
                 Policy Effects
               </h3>
               <div className="space-y-1">
                 {impact.policyEffects.map((policy, i) => (
-                  <div key={i} className="flex items-start gap-2 px-3 py-2 bg-bg-elevated border border-border-subtle rounded text-sm">
-                    <span className="text-accent text-xs mt-0.5">⚡</span>
-                    <span className="text-text-secondary text-xs">{policy}</span>
+                  <div key={i} className="flex items-start gap-2 px-3 py-2 bg-surface-container border border-outline-variant rounded text-sm">
+                    <span className="text-primary text-xs mt-0.5">⚡</span>
+                    <span className="text-secondary text-xs">{policy}</span>
                   </div>
                 ))}
               </div>
@@ -196,19 +196,19 @@ export function ImpactReviewModal({ isOpen, onClose, onConfirm, impact, action }
         </div>
 
         {/* Confirmation */}
-        <div className="px-6 py-4 border-t border-border-subtle bg-bg-elevated/30">
+        <div className="px-6 py-4 border-t border-outline-variant bg-surface-container/30">
           <label className="flex items-start gap-3 mb-4 cursor-pointer">
             <input
               type="checkbox"
               checked={confirmed}
               onChange={(e) => setConfirmed(e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded border-border-default bg-bg-surface accent-accent"
+              className="mt-0.5 w-4 h-4 rounded border-outline bg-surface accent-primary"
             />
-            <span className="text-sm text-text-secondary">
+            <span className="text-sm text-secondary">
               I understand this action will affect{' '}
-              <strong className="text-text-primary">{impact.dependents.length} dependent{impact.dependents.length !== 1 ? 's' : ''}</strong>
+              <strong className="text-on-surface">{impact.dependents.length} dependent{impact.dependents.length !== 1 ? 's' : ''}</strong>
               {' '}and{' '}
-              <strong className="text-text-primary">{impact.affectedWorkspaces.length} workspace{impact.affectedWorkspaces.length !== 1 ? 's' : ''}</strong>.
+              <strong className="text-on-surface">{impact.affectedWorkspaces.length} workspace{impact.affectedWorkspaces.length !== 1 ? 's' : ''}</strong>.
               {action === 'delete' && ' This cannot be undone.'}
             </span>
           </label>
@@ -216,7 +216,7 @@ export function ImpactReviewModal({ isOpen, onClose, onConfirm, impact, action }
           <div className="flex items-center justify-end gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+              className="px-4 py-2 text-sm text-secondary hover:text-on-surface transition-colors"
             >
               Cancel
             </button>
@@ -225,8 +225,8 @@ export function ImpactReviewModal({ isOpen, onClose, onConfirm, impact, action }
               disabled={!confirmed || loading}
               className={`px-4 py-2 text-sm font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                 action === 'delete'
-                  ? 'bg-red-500 text-white hover:bg-red-600'
-                  : 'bg-accent text-white hover:bg-accent/90'
+                  ? 'bg-error text-on-primary hover:bg-error'
+                  : 'bg-primary text-on-primary hover:bg-primary/90'
               }`}
             >
               {loading ? 'Processing...' : actionLabel[action]}

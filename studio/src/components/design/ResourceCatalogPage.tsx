@@ -32,6 +32,9 @@ import { useNavigate } from 'react-router-dom';
 import type { RegistryNode } from '@/types';
 import { useResourceApi } from '@/hooks/useResourceApi';
 import { ImpactReviewModal, useImpactReview } from '@/components/registry/ImpactReviewModal';
+import { EmptyState } from '@/components/states/EmptyState';
+import { ErrorState } from '@/components/states/ErrorState';
+import { LoadingState } from '@/components/states/LoadingState';
 
 export interface ResourceCatalogProps {
   resourceLabel: string;
@@ -55,11 +58,11 @@ interface LocalResource {
 }
 
 const COLOR_MAP: Record<string, { bg: string; text: string; border: string }> = {
-  green:  { bg: 'bg-green-500/10',  text: 'text-green-400',  border: 'border-green-400/30' },
-  blue:   { bg: 'bg-blue-500/10',   text: 'text-blue-400',   border: 'border-blue-400/30' },
-  purple: { bg: 'bg-purple-500/10', text: 'text-purple-400', border: 'border-purple-400/30' },
-  orange: { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-400/30' },
-  cyan:   { bg: 'bg-cyan-500/10',  text: 'text-cyan-400',   border: 'border-cyan-400/30' },
+  green:  { bg: 'bg-success/10',  text: 'text-success',  border: 'border-success/30' },
+  blue:   { bg: 'bg-primary/10',  text: 'text-primary',  border: 'border-primary/30' },
+  purple: { bg: 'bg-secondary/10', text: 'text-secondary', border: 'border-secondary/30' },
+  orange: { bg: 'bg-warning/10',  text: 'text-warning',  border: 'border-warning/30' },
+  cyan:   { bg: 'bg-info/10',    text: 'text-info',     border: 'border-info/30' },
 };
 
 export function ResourceCatalogPage({
@@ -133,10 +136,10 @@ export function ResourceCatalogPage({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant">
         <div>
-          <h1 className="text-lg font-semibold text-text-primary">{resourceLabel}</h1>
-          <p className="text-sm text-text-muted mt-0.5">
+          <h1 className="text-lg font-semibold text-on-surface">{resourceLabel}</h1>
+          <p className="text-sm text-secondary mt-0.5">
             {projectId ? `Project: ${projectId}` : resourceType}
           </p>
         </div>
@@ -144,13 +147,13 @@ export function ResourceCatalogPage({
           <button
             onClick={fetchResources}
             disabled={loading}
-            className="px-3 py-1.5 text-xs border border-border-default rounded hover:bg-bg-elevated text-text-secondary transition-colors"
+            className="px-3 py-1.5 text-xs border border-outline rounded hover:bg-surface-container text-secondary transition-colors"
           >
             {loading ? '...' : 'Refresh'}
           </button>
           <button
             onClick={() => navigate(createPath)}
-            className="px-4 py-2 bg-accent text-white text-sm font-medium rounded hover:bg-accent/90 transition-colors"
+            className="px-4 py-2 bg-primary text-on-primary text-sm font-medium rounded hover:bg-primary/90 transition-colors"
           >
             New {resourceLabel.slice(0, -1)}
           </button>
@@ -160,32 +163,27 @@ export function ResourceCatalogPage({
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
         {error && (
-          <div className="mb-4 p-4 bg-accent-error/10 border border-accent-error/20 rounded text-accent-error text-sm">
-            {error}
+          <div className="mb-4">
+            <ErrorState title="Failed to load resources" message={error} onRetry={fetchResources} />
           </div>
         )}
 
         {loading && resources.length === 0 ? (
-          <div className="text-center text-text-muted text-sm animate-pulse py-8">
-            Loading {resourceLabel}...
-          </div>
+          <LoadingState type="rows" count={3} />
         ) : resources.length === 0 ? (
-          <div className="bg-bg-surface border border-border-subtle rounded-lg p-8 text-center">
-            <p className="text-text-muted text-sm mb-4">No {resourceLabel.toLowerCase()} found.</p>
-            <button
-              onClick={() => navigate(createPath)}
-              className="px-4 py-2 bg-accent text-white text-sm font-medium rounded hover:bg-accent/90 transition-colors"
-            >
-              Create your first {resourceLabel.slice(0, -1).toLowerCase()}
-            </button>
-          </div>
+          <EmptyState
+            icon={<span className="text-lg">📦</span>}
+            title={`No ${resourceLabel.toLowerCase()} found`}
+            description={`Create your first ${resourceLabel.slice(0, -1).toLowerCase()} to get started.`}
+            action={{ label: `Create ${resourceLabel.slice(0, -1)}`, onClick: () => navigate(createPath) }}
+          />
         ) : (
           <div className="space-y-2">
             {resources.map((resource) => (
               <div
                 key={resource.id}
                 onClick={() => navigate(editorPath(resource.id))}
-                className="flex items-center gap-4 px-4 py-3 bg-bg-surface border border-border-subtle rounded-lg hover:border-accent/50 cursor-pointer group transition-all"
+                className="flex items-center gap-4 px-4 py-3 bg-surface border border-outline-variant rounded-lg hover:border-primary/50 cursor-pointer group transition-all"
               >
                 {/* Icon */}
                 <div className={`w-8 h-8 rounded flex items-center justify-center text-sm font-semibold flex-shrink-0 ${colors.bg} ${colors.text}`}>
@@ -196,10 +194,10 @@ export function ResourceCatalogPage({
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-text-primary group-hover:text-accent transition-colors truncate">
+                  <div className="text-sm font-medium text-on-surface group-hover:text-primary transition-colors truncate">
                     {resource.name}
                   </div>
-                  <div className="font-mono text-xs text-text-muted truncate">{resource.id}</div>
+                  <div className="font-mono text-xs text-secondary truncate">{resource.id}</div>
                 </div>
 
                 {/* Delete action */}
@@ -207,14 +205,14 @@ export function ResourceCatalogPage({
                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={(e) => handleDeleteClick(resource, e)}
-                      className="px-2 py-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded transition-colors border border-transparent hover:border-red-400/30"
+                      className="px-2 py-1 text-xs text-error hover:text-error/80 hover:bg-error/10 rounded transition-colors border border-transparent hover:border-error/30"
                     >
                       Delete
                     </button>
                   </div>
                 )}
 
-                <span className="text-text-muted text-sm opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+                <span className="text-secondary text-sm opacity-0 group-hover:opacity-100 transition-opacity">→</span>
               </div>
             ))}
           </div>

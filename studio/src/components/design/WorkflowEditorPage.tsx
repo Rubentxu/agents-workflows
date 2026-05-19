@@ -27,6 +27,8 @@ import { useResourceApi } from '@/hooks/useResourceApi';
 import { WorkflowStageNode, type StageNodeData } from './nodes/WorkflowStageNode';
 import { WorkflowInspector } from './inspector/WorkflowInspector';
 import { WorkflowYamlEditor } from './WorkflowYamlEditor';
+import { LoadingState } from '@/components/states/LoadingState';
+
 import type { Workflow } from '@/types/workflow';
 import type { WorkflowSpec, Stage } from '@/types/manifest.workflow';
 
@@ -269,8 +271,8 @@ export function WorkflowEditorPage() {
 
   if (loading && !isNew) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <span className="text-text-muted text-sm animate-pulse">Loading workflow...</span>
+      <div className="flex items-center justify-center h-full p-6">
+        <LoadingState type="detail" />
       </div>
     );
   }
@@ -278,22 +280,22 @@ export function WorkflowEditorPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-border-subtle bg-bg-elevated/30">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-outline-variant bg-surface-container/30">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate(`/studio/projects/${projectId}/design/workflows`)}
-            className="text-text-muted hover:text-text-primary transition-colors text-sm"
+            className="text-secondary hover:text-on-surface transition-colors text-sm"
           >
             ← Workflows
           </button>
           <div className="w-px h-4 bg-border-subtle" />
           <div>
-            <h1 className="text-base font-semibold text-text-primary">
+            <h1 className="text-base font-semibold text-on-surface">
               {isNew ? 'New Workflow' : (workflow?.name ?? workflowId)}
             </h1>
             {workflow && (
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="font-mono text-xs text-text-muted">
+                <span className="font-mono text-xs text-secondary">
                   {workflow.arn}
                 </span>
               </div>
@@ -302,15 +304,15 @@ export function WorkflowEditorPage() {
         </div>
 
         {/* Tab switcher */}
-        <div className="flex items-center gap-1 bg-bg-surface border border-border-subtle rounded p-0.5">
+        <div className="flex items-center gap-1 bg-surface border border-outline-variant rounded p-0.5">
           {(['canvas', 'yaml'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
                 activeTab === tab
-                  ? 'bg-accent text-white'
-                  : 'text-text-secondary hover:text-text-primary'
+                  ? 'bg-primary text-on-primary'
+                  : 'text-secondary hover:text-on-surface'
               }`}
             >
               {tab === 'canvas' ? 'Canvas' : 'YAML'}
@@ -322,7 +324,7 @@ export function WorkflowEditorPage() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-1.5 bg-accent text-white text-sm font-medium rounded hover:bg-accent/90 transition-colors disabled:opacity-50"
+            className="px-4 py-1.5 bg-primary text-on-primary text-sm font-medium rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save'}
           </button>
@@ -331,7 +333,7 @@ export function WorkflowEditorPage() {
 
       {/* Error */}
       {error && (
-        <div className="mx-6 mt-4 p-3 bg-accent-error/10 border border-accent-error/20 rounded text-accent-error text-sm">
+        <div className="mx-6 mt-4 p-3 bg-error/10 border border-primary-error/20 rounded text-error text-sm">
           {error}
         </div>
       )}
@@ -351,12 +353,12 @@ export function WorkflowEditorPage() {
                 onNodeClick={(_, node) => setSelectedNodeId(node.id === selectedNodeId ? null : node.id)}
                 nodeTypes={nodeTypes}
                 fitView
-                className="bg-bg-canvas"
+                className="bg-background"
               >
                 <Background gap={16} color="var(--color-border-subtle)" />
-                <Controls className="!border-border-subtle !bg-bg-surface" />
+                <Controls className="!border-outline-variant !bg-surface" />
                 <MiniMap
-                  className="!border-border-subtle !bg-bg-surface"
+                  className="!border-outline-variant !bg-surface"
                   nodeColor={(n) => n.id === selectedNodeId ? 'var(--color-accent)' : 'var(--color-text-muted)'}
                 />
               </ReactFlow>
@@ -377,8 +379,8 @@ export function WorkflowEditorPage() {
                 onClose={() => setSelectedNodeId(null)}
               />
             ) : (
-              <div className="w-72 border-l border-border-subtle bg-bg-elevated/20 flex items-center justify-center">
-                <p className="text-text-muted text-xs">Select a stage to inspect</p>
+              <div className="w-72 border-l border-outline-variant bg-surface-container/20 flex items-center justify-center">
+                <p className="text-secondary text-xs">Select a stage to inspect</p>
               </div>
             )}
           </>

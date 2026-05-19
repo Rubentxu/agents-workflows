@@ -23,43 +23,40 @@ export function Toolbar() {
   };
 
   return (
-    <div className="h-14 px-4 flex items-center justify-between bg-white border-b border-gray-200">
-      {/* Left: Title */}
+    <div className="h-14 px-4 flex items-center justify-between bg-surface border-b border-outline">
       <div className="flex items-center gap-4">
-        <h1 className="font-semibold text-gray-800">Workflow Studio</h1>
+        <h1 className="font-semibold text-on-surface">Workflow Studio</h1>
         {workflow && (
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-on-surface/50">
             {workflow.name} v{workflow.version}
           </span>
         )}
       </div>
 
-      {/* Center: Workflow actions */}
       <div className="flex items-center gap-2">
         <button
           onClick={handleViewWorkflow}
           disabled={!selectedNodeId || loading}
-          className="px-3 py-1.5 text-sm bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-3 py-1.5 text-sm bg-primary-container hover:bg-primary-container/80 text-on-primary-container rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {action === 'view' ? 'Loading...' : 'View Workflow'}
         </button>
         <button
           onClick={handleGeneratePlan}
           disabled={!selectedNodeId || loading}
-          className="px-3 py-1.5 text-sm bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-3 py-1.5 text-sm bg-success-container hover:bg-success-container/80 text-on-success-container rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {action === 'plan' ? 'Generating...' : 'Generate Plan'}
         </button>
       </div>
 
-      {/* Right: Status */}
       <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-400">
+        <span className="text-xs text-on-surface/40">
           {selectedNodeId ? `Selected: ${selectedNodeId.split('/').pop()}` : 'No selection'}
         </span>
         <div
           className={`w-2 h-2 rounded-full ${
-            loading ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'
+            loading ? 'bg-warning animate-pulse' : 'bg-success'
           }`}
         />
       </div>

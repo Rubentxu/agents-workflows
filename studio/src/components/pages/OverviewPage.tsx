@@ -14,8 +14,8 @@ export function OverviewPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-text-primary">Project Overview</h1>
-        <p className="text-sm text-text-muted mt-1">
+        <h1 className="text-xl font-semibold text-on-surface">Project Overview</h1>
+        <p className="text-sm text-secondary mt-1">
           {projectId ? `Project: ${projectId}` : 'Overview'}
         </p>
       </div>
@@ -30,15 +30,15 @@ export function OverviewPage() {
         ].map(({ label, value, accent }) => (
           <div
             key={label}
-            className={`bg-bg-surface border border-border-subtle rounded-lg p-4 border-l-4 ${
-              accent === 'blue' ? 'border-l-accent' :
-              accent === 'purple' ? 'border-l-purple-400' :
-              accent === 'green' ? 'border-l-green-400' :
-              'border-l-cyan-400'
+            className={`bg-surface border border-outline-variant rounded-lg p-4 border-l-4 ${
+              accent === 'blue' ? 'border-l-primary' :
+              accent === 'purple' ? 'border-l-secondary' :
+              accent === 'green' ? 'border-l-success' :
+              'border-l-info'
             }`}
           >
-            <div className="text-xs text-text-muted uppercase tracking-wide">{label}</div>
-            <div className="text-2xl font-bold text-text-primary mt-1">
+            <div className="text-xs text-secondary uppercase tracking-wide">{label}</div>
+            <div className="text-2xl font-bold text-on-surface mt-1">
               {loading ? <span className="animate-pulse">—</span> : value}
             </div>
           </div>
@@ -46,8 +46,8 @@ export function OverviewPage() {
       </div>
 
       {/* Placeholder for detailed sections */}
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-6">
-        <p className="text-sm text-text-muted text-center">
+      <div className="bg-surface border border-outline-variant rounded-lg p-6">
+        <p className="text-sm text-secondary text-center">
           Connect to your project data to see detailed metrics here.
         </p>
       </div>

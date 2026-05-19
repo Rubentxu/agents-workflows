@@ -94,10 +94,10 @@ export function RegistryPage({ section }: { section?: string }) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant">
         <div>
-          <h1 className="text-lg font-semibold text-text-primary capitalize">{section}</h1>
-          <p className="text-sm text-text-muted mt-0.5">
+          <h1 className="text-lg font-semibold text-on-surface capitalize">{section}</h1>
+          <p className="text-sm text-secondary mt-0.5">
             {projectId ? `Project: ${projectId}` : 'Registry'}
           </p>
         </div>
@@ -105,13 +105,13 @@ export function RegistryPage({ section }: { section?: string }) {
           <button
             onClick={fetchAll}
             disabled={loading}
-            className="px-3 py-1.5 text-xs border border-border-default rounded hover:bg-bg-elevated transition-colors text-text-secondary"
+            className="px-3 py-1.5 text-xs border border-outline rounded hover:bg-surface-container transition-colors text-secondary"
           >
             {loading ? 'Loading...' : 'Refresh'}
           </button>
           <button
             onClick={() => navigate(`?arn=${encodeURIComponent('')}`)}
-            className="px-4 py-2 bg-accent text-white text-sm font-medium rounded hover:bg-accent/90 transition-colors"
+            className="px-4 py-2 bg-primary text-on-primary text-sm font-medium rounded hover:bg-primary/90 transition-colors"
           >
             Create resource
           </button>
@@ -119,21 +119,21 @@ export function RegistryPage({ section }: { section?: string }) {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-border-subtle bg-bg-elevated/50">
+      <div className="flex items-center gap-3 px-6 py-3 border-b border-outline-variant bg-surface-container/50">
         {/* Search */}
         <input
           type="text"
           placeholder="Search resources..."
           value={filters.query}
           onChange={(e) => setFilters({ query: e.target.value })}
-          className="flex-1 max-w-xs text-sm bg-bg-surface border border-border-subtle rounded px-3 py-1.5 text-text-primary placeholder-text-muted outline-none focus:border-accent"
+          className="flex-1 max-w-xs text-sm bg-surface border border-outline-variant rounded px-3 py-1.5 text-on-surface placeholder:text-secondary outline-none focus:border-primary"
         />
 
         {/* Kind filter */}
         <select
           value={filters.kind}
           onChange={(e) => setFilters({ kind: e.target.value as typeof filters.kind })}
-          className="text-sm bg-bg-surface border border-border-subtle rounded px-3 py-1.5 text-text-secondary outline-none focus:border-accent"
+          className="text-sm bg-surface border border-outline-variant rounded px-3 py-1.5 text-secondary outline-none focus:border-primary"
         >
           <option value="all">All kinds</option>
           <option value="workflow">Workflows</option>
@@ -149,7 +149,7 @@ export function RegistryPage({ section }: { section?: string }) {
         <select
           value={filters.scope}
           onChange={(e) => setFilters({ scope: e.target.value })}
-          className="text-sm bg-bg-surface border border-border-subtle rounded px-3 py-1.5 text-text-secondary outline-none focus:border-accent"
+          className="text-sm bg-surface border border-outline-variant rounded px-3 py-1.5 text-secondary outline-none focus:border-primary"
         >
           <option value="all">All scopes</option>
           <option value="global">Global</option>
@@ -161,15 +161,15 @@ export function RegistryPage({ section }: { section?: string }) {
       {/* Content */}
       <div className="flex-1 overflow-auto">
         {error && (
-          <div className="mx-6 mt-4 p-4 bg-accent-error/5 border border-accent-error/20 rounded text-accent-error text-sm">
+          <div className="mx-6 mt-4 p-4 bg-error/5 border border-primary-error/20 rounded text-error text-sm">
             {error}
           </div>
         )}
 
         {loading && resources.length === 0 ? (
-          <div className="p-8 text-center text-text-muted text-sm animate-pulse">Loading registry...</div>
+          <div className="p-8 text-center text-secondary text-sm animate-pulse">Loading registry...</div>
         ) : filtered.length === 0 ? (
-          <div className="p-8 text-center text-text-muted text-sm">
+          <div className="p-8 text-center text-secondary text-sm">
             {resources.length === 0
               ? 'No resources found. Create one to get started.'
               : 'No resources match your filters.'}
@@ -181,8 +181,8 @@ export function RegistryPage({ section }: { section?: string }) {
               .map((type) => (
                 <div key={type}>
                   <div className="flex items-center gap-2 mb-2">
-                    <h2 className="text-sm font-semibold text-text-primary capitalize">{type}s</h2>
-                    <span className="text-xs text-text-muted bg-bg-elevated px-1.5 py-0.5 rounded">
+                    <h2 className="text-sm font-semibold text-on-surface capitalize">{type}s</h2>
+                    <span className="text-xs text-secondary bg-surface-container px-1.5 py-0.5 rounded">
                       {grouped[type].length}
                     </span>
                   </div>
@@ -205,26 +205,26 @@ function ResourceRow({ node }: { node: RegistryNode }) {
 
   // Determine scope badge
   const scopeBadge = node.namespace.startsWith('workspace/')
-    ? { label: 'workspace', color: 'text-purple-400' }
+    ? { label: 'workspace', color: 'text-secondary' }
     : node.namespace.startsWith('project/')
-    ? { label: 'project', color: 'text-blue-400' }
-    : { label: 'global', color: 'text-green-400' };
+    ? { label: 'project', color: 'text-primary' }
+    : { label: 'global', color: 'text-success' };
 
   return (
     <button
       onClick={() => navigate(`/studio/projects/${node.namespace.split('/')[1]}/registry/resource?arn=${encodeURIComponent(node.id)}`)}
-      className="w-full flex items-center gap-3 px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg hover:border-accent/50 hover:bg-bg-elevated/50 transition-all text-left group"
+      className="w-full flex items-center gap-3 px-4 py-2.5 bg-surface border border-outline-variant rounded-lg hover:border-primary/50 hover:bg-surface-container/50 transition-all text-left group"
     >
       <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${scopeBadge.color} border-current opacity-70`}>
         {scopeBadge.label}
       </span>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-text-primary truncate group-hover:text-accent transition-colors">
+        <div className="text-sm font-medium text-on-surface truncate group-hover:text-primary transition-colors">
           {node.name}
         </div>
-        <div className="font-mono text-xs text-text-muted truncate">{node.id}</div>
+        <div className="font-mono text-xs text-secondary truncate">{node.id}</div>
       </div>
-      <span className="text-xs text-text-muted capitalize">{node.type}</span>
+      <span className="text-xs text-secondary capitalize">{node.type}</span>
     </button>
   );
 }

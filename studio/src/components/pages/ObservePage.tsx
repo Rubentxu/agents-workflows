@@ -15,16 +15,16 @@ export function ObservePage({ section }: ObservePageProps) {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-lg font-semibold text-text-primary capitalize">
+        <h1 className="text-lg font-semibold text-on-surface capitalize">
           {section}
         </h1>
-        <p className="text-sm text-text-muted mt-1">
+        <p className="text-sm text-secondary mt-1">
           Project: {projectId}
         </p>
       </div>
 
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-8 text-center">
-        <p className="text-text-muted text-sm">
+      <div className="bg-surface border border-outline-variant rounded-lg p-8 text-center">
+        <p className="text-secondary text-sm">
           {section} view — data comes from Agent Executions reported via MCP/Insights.
         </p>
       </div>

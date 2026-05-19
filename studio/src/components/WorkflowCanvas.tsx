@@ -32,13 +32,11 @@ export function WorkflowCanvas({ onNodeSelect }: WorkflowCanvasProps) {
   const workflow = useWorkflowEditorStore((state) => state.workflow);
   const selectedNodeId = useWorkflowEditorStore((state) => state.selectedNodeId);
 
-  // Convert workflow stages to React Flow nodes
   const initialNodes = useMemo<Node[]>(() => {
     if (!workflow) return [];
 
     const nodes: Node[] = [];
 
-    // Create stage nodes
     workflow.stages.forEach((stage, index) => {
       nodes.push({
         id: stage.id,
@@ -55,7 +53,6 @@ export function WorkflowCanvas({ onNodeSelect }: WorkflowCanvasProps) {
       });
     });
 
-    // Create agent nodes
     Object.entries(workflow.agents).forEach(([key, agent], index) => {
       nodes.push({
         id: key,
@@ -72,7 +69,6 @@ export function WorkflowCanvas({ onNodeSelect }: WorkflowCanvasProps) {
     return nodes;
   }, [workflow, selectedNodeId]);
 
-  // Convert workflow dependencies to React Flow edges
   const initialEdges = useMemo<Edge[]>(() => {
     if (!workflow) return [];
 
@@ -86,7 +82,7 @@ export function WorkflowCanvas({ onNodeSelect }: WorkflowCanvasProps) {
           target: stage.id,
           type: 'smoothstep',
           animated: true,
-          style: { stroke: '#6366f1' },
+          style: { stroke: 'var(--color-primary)' },
         });
       });
     });
@@ -119,7 +115,6 @@ export function WorkflowCanvas({ onNodeSelect }: WorkflowCanvasProps) {
         edges={edges}
         onNodesChange={(changes) => {
           onNodesChange(changes);
-          // Sync selection state
           changes.forEach((change) => {
             if (change.type === 'select' && change.selected) {
               useWorkflowEditorStore.getState().setSelectedNodeId(change.id);

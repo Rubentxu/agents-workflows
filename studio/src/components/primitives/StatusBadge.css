@@ -1,0 +1,55 @@
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.status-badge--sm {
+  padding: 2px var(--space-2);
+  font: var(--typography-label-small);
+}
+
+.status-badge--md {
+  padding: var(--space-1) var(--space-3);
+  font: var(--typography-label-medium);
+}
+
+.status-badge__label {
+  color: inherit;
+}
+
+@keyframes status-badge-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.status-badge__spinner {
+  animation: status-badge-spin 0.8s linear infinite;
+}
+
+@keyframes status-badge-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.status-badge__pulse-dot {
+  animation: status-badge-pulse 1.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-badge__spinner {
+    animation: none;
+  }
+  .status-badge__pulse-dot {
+    animation: none;
+  }
+}

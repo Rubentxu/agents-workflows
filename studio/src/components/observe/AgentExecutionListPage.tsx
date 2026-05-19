@@ -1,15 +1,20 @@
-/**
- * AgentExecutionListPage — /studio/projects/:projectId/observe/agent-executions
- * Lists recent agent executions with status filters.
- * "Recent activity on dashboards should be labeled `Recent Agent Executions`."
- */
-
 import { useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useExecutionApi } from '@/hooks/useExecutionApi';
+import { LoadingState } from '@/components/states/LoadingState';
+import { EmptyState } from '@/components/states/EmptyState';
+import { ErrorState } from '@/components/states/ErrorState';
 import type { AgentExecutionRow } from '@/types/dashboard';
 
 type StatusFilter = 'all' | 'running' | 'completed' | 'failed';
+
+const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string; dotPulse?: boolean }> = {
+  running: { bg: 'var(--color-info-container)', text: 'var(--color-on-info-container)', dot: 'var(--color-info)', dotPulse: true },
+  completed: { bg: 'var(--color-success-container)', text: 'var(--color-on-success-container)', dot: 'var(--color-success)' },
+  failed: { bg: 'var(--color-error-container)', text: 'var(--color-on-error-container)', dot: 'var(--color-error)' },
+  pending: { bg: 'var(--color-warning-container)', text: 'var(--color-on-warning-container)', dot: 'var(--color-warning)' },
+  cancelled: { bg: 'var(--color-surface-container-high)', text: 'var(--color-secondary)', dot: 'var(--color-secondary)' },
+};
 
 export function AgentExecutionListPage() {
   const { projectId } = useParams();
@@ -20,6 +25,7 @@ export function AgentExecutionListPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [hasFetched, setHasFetched] = useState(false);
 
   const fetchExecutions = useCallback(async () => {
     setLoading(true);
@@ -31,6 +37,7 @@ export function AgentExecutionListPage() {
       setError(err instanceof Error ? err.message : 'Failed to load executions');
     } finally {
       setLoading(false);
+      setHasFetched(true);
     }
   }, [listExecutions]);
 
@@ -38,23 +45,8 @@ export function AgentExecutionListPage() {
     ? executions
     : executions.filter((e) => e.status === statusFilter);
 
-  const statusBadge = (status: AgentExecutionRow['status']) => {
-    const styles: Record<typeof status, string> = {
-      running: 'text-blue-400 border-blue-400/30',
-      completed: 'text-green-400 border-green-400/30',
-      failed: 'text-red-400 border-red-400/30',
-      pending: 'text-yellow-400 border-yellow-400/30',
-      cancelled: 'text-text-muted border-border-default',
-    };
-    return (
-      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border capitalize ${styles[status]}`}>
-        {status}
-      </span>
-    );
-  };
-
   const formatDuration = (ms?: number) => {
-    if (!ms) return '—';
+    if (!ms) return '\u2014';
     if (ms < 1000) return `${ms}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
     return `${(ms / 60000).toFixed(1)}m`;
@@ -67,24 +59,36 @@ export function AgentExecutionListPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
+      <div
+        className="flex items-center justify-between px-6 py-4"
+        style={{ borderBottom: '1px solid var(--color-outline-variant)' }}
+      >
         <div>
-          <h1 className="text-lg font-semibold text-text-primary">Agent Executions</h1>
-          <p className="text-sm text-text-muted mt-0.5">
-            {projectId ? `Project: ${projectId}` : 'Observe'} — {filtered.length} executions
+          <h1 className="text-lg font-semibold" style={{ color: 'var(--color-on-surface)' }}>
+            Agent Executions
+          </h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--color-secondary)' }}>
+            {projectId ? `Project: ${projectId}` : 'Observe'} \u2014 {filtered.length} executions
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Status filter */}
-          <div className="flex items-center gap-1 bg-bg-surface border border-border-subtle rounded p-0.5">
+          <div
+            className="flex items-center gap-1 rounded p-0.5"
+            style={{
+              background: 'var(--color-surface-container)',
+              border: '1px solid var(--color-outline-variant)',
+            }}
+          >
             {(['all', 'running', 'completed', 'failed'] as StatusFilter[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setStatusFilter(f)}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors capitalize ${
-                  statusFilter === f ? 'bg-accent text-white' : 'text-text-secondary hover:text-text-primary'
-                }`}
+                className="px-3 py-1 text-xs font-medium rounded transition-colors capitalize"
+                style={
+                  statusFilter === f
+                    ? { background: 'var(--color-primary)', color: 'var(--color-on-primary)' }
+                    : { color: 'var(--color-secondary)' }
+                }
               >
                 {f}
               </button>
@@ -93,74 +97,117 @@ export function AgentExecutionListPage() {
           <button
             onClick={fetchExecutions}
             disabled={loading}
-            className="px-3 py-1.5 text-xs border border-border-default rounded hover:bg-bg-elevated transition-colors text-text-secondary"
+            className="px-3 py-1.5 text-xs rounded transition-colors"
+            style={{
+              border: '1px solid var(--color-outline)',
+              color: 'var(--color-on-surface)',
+              opacity: loading ? 0.6 : 1,
+            }}
           >
             {loading ? 'Loading...' : 'Refresh'}
           </button>
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-auto p-6">
         {error && (
-          <div className="mb-4 p-4 bg-accent-error/10 border border-accent-error/20 rounded text-accent-error text-sm">{error}</div>
+          <div className="mb-4">
+            <ErrorState
+              title="Failed to load executions"
+              message={error}
+              onRetry={fetchExecutions}
+            />
+          </div>
         )}
 
-        {loading && executions.length === 0 ? (
-          <div className="text-center text-text-muted text-sm animate-pulse py-8">Loading executions...</div>
-        ) : filtered.length === 0 ? (
-          <div className="bg-bg-surface border border-border-subtle rounded-lg p-8 text-center">
-            <p className="text-text-muted text-sm">No executions found.</p>
-          </div>
+        {loading && !hasFetched ? (
+          <LoadingState type="rows" count={6} />
+        ) : filtered.length === 0 && !error ? (
+          <EmptyState
+            icon={
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <rect x="2" y="3" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M6 8h8M6 11h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            }
+            title="No agent executions yet"
+            description="Agent executions will appear here once they are run. Executions are reported by agents through MCP."
+          />
         ) : (
           <div className="space-y-2">
-            {filtered.map((exec) => (
-              <div
-                key={exec.id}
-                onClick={() => navigate(`/studio/projects/${projectId}/observe/agent-executions/${encodeURIComponent(exec.id)}`)}
-                className="flex items-center gap-4 px-4 py-3 bg-bg-surface border border-border-subtle rounded-lg hover:border-accent/50 hover:bg-bg-elevated/50 transition-all cursor-pointer group"
-              >
-                {/* Status icon */}
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  exec.status === 'running' ? 'bg-blue-400 animate-pulse' :
-                  exec.status === 'completed' ? 'bg-green-400' :
-                  exec.status === 'failed' ? 'bg-red-400' :
-                  'bg-text-muted'
-                }`} />
+            {filtered.map((exec) => {
+              const sc = STATUS_COLORS[exec.status] ?? STATUS_COLORS.cancelled;
+              return (
+                <div
+                  key={exec.id}
+                  onClick={() => navigate(`/studio/projects/${projectId}/observe/agent-executions/${encodeURIComponent(exec.id)}`)}
+                  className="flex items-center gap-4 px-4 py-3 rounded-lg cursor-pointer group"
+                  style={{
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-outline-variant)',
+                    transition: 'border-color 120ms, background 120ms',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-primary)';
+                    e.currentTarget.style.background = 'var(--color-surface-container)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-outline-variant)';
+                    e.currentTarget.style.background = 'var(--color-surface)';
+                  }}
+                >
+                  <div
+                    className={`w-2 h-2 rounded-full flex-shrink-0 ${sc.dotPulse ? 'animate-pulse' : ''}`}
+                    style={{ background: sc.dot }}
+                  />
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-text-primary group-hover:text-accent transition-colors truncate">
-                      {exec.workflowArn.split('/').pop() ?? exec.workflowArn}
-                    </span>
-                    {statusBadge(exec.status)}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate" style={{ color: 'var(--color-on-surface)' }}>
+                        {exec.workflowArn.split('/').pop() ?? exec.workflowArn}
+                      </span>
+                      <span
+                        className="text-[10px] font-medium px-1.5 py-0.5 rounded capitalize"
+                        style={{
+                          color: sc.text,
+                          background: sc.bg,
+                        }}
+                      >
+                        {exec.status}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <span className="font-mono text-xs truncate" style={{ color: 'var(--color-secondary)' }}>
+                        {exec.workflowArn}
+                      </span>
+                      <span style={{ color: 'var(--color-outline)' }}>&middot;</span>
+                      <span className="text-xs" style={{ color: 'var(--color-secondary)' }}>
+                        {exec.agentArn.split('/').pop()}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <span className="font-mono text-xs text-text-muted truncate">{exec.workflowArn}</span>
-                    <span className="text-text-muted">·</span>
-                    <span className="text-xs text-text-muted">{exec.agentArn.split('/').pop()}</span>
+
+                  <div className="text-xs flex-shrink-0" style={{ color: 'var(--color-secondary)' }}>
+                    {exec.workspaceName}
                   </div>
-                </div>
 
-                {/* Workspace */}
-                <div className="text-xs text-text-muted flex-shrink-0">
-                  {exec.workspaceName}
-                </div>
+                  <div className="text-xs flex-shrink-0 font-mono w-16 text-right" style={{ color: 'var(--color-secondary)' }}>
+                    {formatDuration(exec.durationMs)}
+                  </div>
 
-                {/* Duration */}
-                <div className="text-xs text-text-muted flex-shrink-0 font-mono w-16 text-right">
-                  {formatDuration(exec.durationMs)}
-                </div>
+                  <div className="text-xs flex-shrink-0 w-28 text-right" style={{ color: 'var(--color-secondary)' }}>
+                    {formatTime(exec.startedAt)}
+                  </div>
 
-                {/* Time */}
-                <div className="text-xs text-text-muted flex-shrink-0 w-28 text-right">
-                  {formatTime(exec.startedAt)}
+                  <span
+                    className="text-sm flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    style={{ color: 'var(--color-primary)' }}
+                  >
+                    &rarr;
+                  </span>
                 </div>
-
-                <span className="text-text-muted text-sm opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">→</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

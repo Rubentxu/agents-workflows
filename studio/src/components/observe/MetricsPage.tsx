@@ -1,9 +1,3 @@
-/**
- * MetricsPage — /studio/projects/:projectId/observe/metrics
- * "Metrics must support both execution-centric and resource-centric views.
- *  Metrics tabs are Agent Executions, Workflows, Agents, Resources, and System."
- */
-
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAllMetricsStream } from '@/hooks/useMetricsStream';
@@ -17,6 +11,85 @@ const TIME_WINDOW_MS: Record<TimeWindow, number> = {
   '24h': 24 * 60 * 60 * 1000,
   '7d': 7 * 24 * 60 * 60 * 1000,
   '30d': 30 * 24 * 60 * 60 * 1000,
+};
+
+function formatDuration(ms: number): string {
+  if (ms === 0) return '\u2014';
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${(ms / 60000).toFixed(1)}m`;
+}
+
+function formatNumber(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return String(n);
+}
+
+function BarChart({ data, maxValue, height = 120 }: { data: { label: string; value: number; color?: string }[]; maxValue: number; height?: number }) {
+  if (data.length === 0 || maxValue === 0) {
+    return (
+      <div className="flex items-center justify-center h-[120px] text-xs" style={{ color: 'var(--color-secondary)' }}>
+        No data available
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-end gap-2 h-[120px]">
+      {data.map((item, i) => (
+        <div key={i} className="flex flex-col items-center flex-1 min-w-0">
+          <div className="text-[10px] mb-1 truncate w-full text-center" style={{ color: 'var(--color-secondary)' }}>
+            {formatNumber(item.value)}
+          </div>
+          <div
+            className="w-full rounded-t"
+            style={{
+              height: `${(item.value / maxValue) * height}px`,
+              minHeight: '2px',
+              background: item.color || 'var(--color-primary)',
+            }}
+          />
+          <div className="text-[10px] mt-1 truncate w-full text-center" title={item.label} style={{ color: 'var(--color-secondary)' }}>
+            {item.label}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StatCard({ label, value, subValue, color }: { label: string; value: string | number; subValue?: string; color?: string }) {
+  return (
+    <div
+      className="rounded-lg p-4"
+      style={{
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-outline-variant)',
+      }}
+    >
+      <div className="text-xs mb-2" style={{ color: 'var(--color-secondary)' }}>{label}</div>
+      <div
+        className="text-2xl font-semibold"
+        style={{ color: color || 'var(--color-on-surface)' }}
+      >
+        {value}
+      </div>
+      {subValue && <div className="text-xs mt-0.5" style={{ color: 'var(--color-secondary)' }}>{subValue}</div>}
+    </div>
+  );
+}
+
+const STATUS_BAR_COLORS: Record<string, string> = {
+  running: 'var(--color-info)',
+  completed: 'var(--color-success)',
+  failed: 'var(--color-error)',
+  default: 'var(--color-primary)',
+};
+
+const EVENT_DOT_COLORS: Record<string, string> = {
+  completed: 'var(--color-success)',
+  failed: 'var(--color-error)',
+  started: 'var(--color-info)',
 };
 
 export function MetricsPage() {
@@ -45,21 +118,33 @@ export function MetricsPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
+      <div
+        className="flex items-center justify-between px-6 py-4"
+        style={{ borderBottom: '1px solid var(--color-outline-variant)' }}
+      >
         <div>
-          <h1 className="text-lg font-semibold text-text-primary">Metrics</h1>
-          <p className="text-sm text-text-muted mt-0.5">{projectId ? `Project: ${projectId}` : 'Observe'}</p>
+          <h1 className="text-lg font-semibold" style={{ color: 'var(--color-on-surface)' }}>Metrics</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--color-secondary)' }}>
+            {projectId ? `Project: ${projectId}` : 'Observe'}
+          </p>
         </div>
-        {/* Time window selector */}
-        <div className="flex items-center gap-1 bg-bg-surface border border-border-subtle rounded p-0.5">
+        <div
+          className="flex items-center gap-1 rounded p-0.5"
+          style={{
+            background: 'var(--color-surface-container)',
+            border: '1px solid var(--color-outline-variant)',
+          }}
+        >
           {(['1h', '24h', '7d', '30d'] as TimeWindow[]).map((w) => (
             <button
               key={w}
               onClick={() => setTimeWindow(w)}
-              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                timeWindow === w ? 'bg-accent text-white' : 'text-text-secondary hover:text-text-primary'
-              }`}
+              className="px-3 py-1 text-xs font-medium rounded transition-colors"
+              style={
+                timeWindow === w
+                  ? { background: 'var(--color-primary)', color: 'var(--color-on-primary)' }
+                  : { color: 'var(--color-secondary)' }
+              }
             >
               {w}
             </button>
@@ -67,22 +152,28 @@ export function MetricsPage() {
         </div>
       </div>
 
-      {/* Metric tabs */}
-      <div className="flex px-6 border-b border-border-subtle bg-bg-elevated/20">
+      <div
+        className="flex px-6 overflow-x-auto"
+        style={{
+          borderBottom: '1px solid var(--color-outline-variant)',
+          background: 'var(--color-surface-container-low)',
+        }}
+      >
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === tab.id ? 'border-accent text-accent' : 'border-transparent text-text-secondary hover:text-text-primary'
-            }`}
+            className="px-4 py-2.5 text-sm font-medium border-b-2 transition-colors"
+            style={{
+              borderBottomColor: activeTab === tab.id ? 'var(--color-primary)' : 'transparent',
+              color: activeTab === tab.id ? 'var(--color-primary)' : 'var(--color-secondary)',
+            }}
           >
             {tab.label}
           </button>
         ))}
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-auto p-6">
         {activeTab === 'executions' && <ExecutionsTab metrics={aggregatedMetrics} />}
         {activeTab === 'workflows' && <WorkflowsTab metrics={aggregatedMetrics} />}
@@ -94,60 +185,6 @@ export function MetricsPage() {
   );
 }
 
-function formatDuration(ms: number): string {
-  if (ms === 0) return '—';
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${(ms / 60000).toFixed(1)}m`;
-}
-
-function formatNumber(n: number): string {
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return String(n);
-}
-
-function BarChart({ data, maxValue, height = 120 }: { data: { label: string; value: number; color?: string }[]; maxValue: number; height?: number }) {
-  if (data.length === 0 || maxValue === 0) {
-    return (
-      <div className="flex items-center justify-center h-[120px] text-text-muted text-xs">
-        No data available
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-end gap-2 h-[120px]">
-      {data.map((item, i) => (
-        <div key={i} className="flex flex-col items-center flex-1 min-w-0">
-          <div className="text-[10px] text-text-muted mb-1 truncate w-full text-center">
-            {formatNumber(item.value)}
-          </div>
-          <div
-            className={`w-full rounded-t ${item.color || 'bg-accent'}`}
-            style={{ height: `${(item.value / maxValue) * height}px`, minHeight: '2px' }}
-          />
-          <div className="text-[10px] text-text-muted mt-1 truncate w-full text-center" title={item.label}>
-            {item.label}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function StatCard({ label, value, subValue, color }: { label: string; value: string | number; subValue?: string; color?: string }) {
-  return (
-    <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-      <div className="text-xs text-text-muted mb-2">{label}</div>
-      <div className={`text-2xl font-semibold ${color || 'text-text-primary'}`}>{value}</div>
-      {subValue && <div className="text-xs text-text-muted mt-0.5">{subValue}</div>}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Tab: Agent Executions
-// ---------------------------------------------------------------------------
 function ExecutionsTab({ metrics }: { metrics: AggregatedMetrics }) {
   const { totalExecutions, runningExecutions, completedExecutions, failedExecutions, avgDurationMs, totalTokens, byStage, recentEvents } = metrics;
 
@@ -156,75 +193,81 @@ function ExecutionsTab({ metrics }: { metrics: AggregatedMetrics }) {
     : 0;
 
   const statusData = [
-    { label: 'Running', value: runningExecutions, color: 'bg-blue-400' },
-    { label: 'Completed', value: completedExecutions, color: 'bg-green-400' },
-    { label: 'Failed', value: failedExecutions, color: 'bg-red-400' },
+    { label: 'Running', value: runningExecutions, color: STATUS_BAR_COLORS.running },
+    { label: 'Completed', value: completedExecutions, color: STATUS_BAR_COLORS.completed },
+    { label: 'Failed', value: failedExecutions, color: STATUS_BAR_COLORS.failed },
   ];
 
   const maxStatus = Math.max(runningExecutions, completedExecutions, failedExecutions, 1);
-
   const maxStageCount = Math.max(...Object.values(byStage).map((s) => s.count), 1);
 
   return (
     <div className="space-y-6">
-      {/* Summary cards */}
       <div className="grid grid-cols-4 gap-4">
         <StatCard label="Total Executions" value={totalExecutions} />
-        <StatCard label="Success Rate" value={`${successRate}%`} color={successRate >= 80 ? 'text-accent-success' : successRate >= 50 ? 'text-accent-warning' : 'text-accent-error'} />
+        <StatCard
+          label="Success Rate"
+          value={`${successRate}%`}
+          color={successRate >= 80 ? 'var(--color-success)' : successRate >= 50 ? 'var(--color-warning)' : 'var(--color-error)'}
+        />
         <StatCard label="Avg Duration" value={formatDuration(avgDurationMs)} />
         <StatCard label="Total Tokens" value={formatNumber(totalTokens)} />
       </div>
 
-      {/* Status breakdown */}
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-        <h3 className="text-sm font-medium text-text-primary mb-4">Execution Status Breakdown</h3>
+      <div className="rounded-lg p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-outline-variant)' }}>
+        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--color-on-surface)' }}>
+          Execution Status Breakdown
+        </h3>
         <BarChart data={statusData} maxValue={maxStatus} />
       </div>
 
-      {/* Stage performance */}
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-        <h3 className="text-sm font-medium text-text-primary mb-4">Stage Performance</h3>
+      <div className="rounded-lg p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-outline-variant)' }}>
+        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--color-on-surface)' }}>
+          Stage Performance
+        </h3>
         {Object.keys(byStage).length === 0 ? (
-          <div className="text-center text-text-muted text-xs py-8">No stage data yet</div>
+          <div className="text-center text-xs py-8" style={{ color: 'var(--color-secondary)' }}>No stage data yet</div>
         ) : (
           <div className="space-y-2">
             {Object.entries(byStage).slice(0, 10).map(([stageId, data]) => (
               <div key={stageId} className="flex items-center gap-4">
-                <div className="w-24 text-xs text-text-muted font-mono truncate">{stageId}</div>
-                <div className="flex-1 h-4 bg-bg-elevated rounded overflow-hidden">
+                <div className="w-24 text-xs font-mono truncate" style={{ color: 'var(--color-secondary)' }}>{stageId}</div>
+                <div className="flex-1 h-4 rounded overflow-hidden" style={{ background: 'var(--color-surface-container-high)' }}>
                   <div
-                    className={`h-full rounded ${data.failed > 0 ? 'bg-red-400' : 'bg-green-400'}`}
-                    style={{ width: `${(data.count / maxStageCount) * 100}%` }}
+                    className="h-full rounded"
+                    style={{
+                      background: data.failed > 0 ? 'var(--color-error)' : 'var(--color-success)',
+                      width: `${(data.count / maxStageCount) * 100}%`,
+                    }}
                   />
                 </div>
-                <div className="w-16 text-xs text-text-muted text-right">{data.count} runs</div>
-                <div className="w-16 text-xs text-text-muted text-right">{data.failed} failed</div>
-                <div className="w-20 text-xs text-text-muted text-right">{formatDuration(data.duration / Math.max(data.count, 1))} avg</div>
+                <div className="w-16 text-xs text-right" style={{ color: 'var(--color-secondary)' }}>{data.count} runs</div>
+                <div className="w-16 text-xs text-right" style={{ color: 'var(--color-secondary)' }}>{data.failed} failed</div>
+                <div className="w-20 text-xs text-right" style={{ color: 'var(--color-secondary)' }}>{formatDuration(data.duration / Math.max(data.count, 1))} avg</div>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Recent events */}
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-        <h3 className="text-sm font-medium text-text-primary mb-4">Recent Events</h3>
+      <div className="rounded-lg p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-outline-variant)' }}>
+        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--color-on-surface)' }}>
+          Recent Events
+        </h3>
         {recentEvents.length === 0 ? (
-          <div className="text-center text-text-muted text-xs py-8">No events in selected time window</div>
+          <div className="text-center text-xs py-8" style={{ color: 'var(--color-secondary)' }}>No events in selected time window</div>
         ) : (
           <div className="space-y-2 max-h-64 overflow-auto">
             {recentEvents.slice(-20).reverse().map((event, i) => (
               <div key={i} className="flex items-center gap-3 text-xs">
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  event.event_type === 'completed' ? 'bg-green-400' :
-                  event.event_type === 'failed' ? 'bg-red-400' :
-                  event.event_type === 'started' ? 'bg-blue-400' :
-                  'bg-yellow-400'
-                }`} />
-                <span className="font-mono text-text-muted flex-shrink-0">{event.stage_id}</span>
-                <span className="text-text-secondary flex-1 truncate">{event.execution_arn.split('/').pop()}</span>
-                <span className="text-text-muted">{event.event_type}</span>
-                <span className="text-text-muted">{new Date(event.timestamp).toLocaleTimeString()}</span>
+                <span
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ background: EVENT_DOT_COLORS[event.event_type] ?? 'var(--color-warning)' }}
+                />
+                <span className="font-mono flex-shrink-0" style={{ color: 'var(--color-secondary)' }}>{event.stage_id}</span>
+                <span className="flex-1 truncate" style={{ color: 'var(--color-on-surface)' }}>{event.execution_arn.split('/').pop()}</span>
+                <span style={{ color: 'var(--color-secondary)' }}>{event.event_type}</span>
+                <span style={{ color: 'var(--color-secondary)' }}>{new Date(event.timestamp).toLocaleTimeString()}</span>
               </div>
             ))}
           </div>
@@ -234,9 +277,6 @@ function ExecutionsTab({ metrics }: { metrics: AggregatedMetrics }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab: Workflows
-// ---------------------------------------------------------------------------
 function WorkflowsTab({ metrics }: { metrics: AggregatedMetrics }) {
   const { byWorkflow } = metrics;
 
@@ -246,12 +286,11 @@ function WorkflowsTab({ metrics }: { metrics: AggregatedMetrics }) {
       value: data.count,
       failed: data.failed,
       avgDuration: data.avgDuration,
-      color: data.failed > 0 ? 'bg-red-400' : 'bg-accent',
+      color: data.failed > 0 ? 'var(--color-error)' : 'var(--color-primary)',
     }))
     .sort((a, b) => b.value - a.value);
 
   const maxCount = Math.max(...workflowData.map((d) => d.value), 1);
-
   const totalWorkflows = Object.keys(byWorkflow).length;
   const totalRuns = Object.values(byWorkflow).reduce((sum, d) => sum + d.count, 0);
   const totalFailures = Object.values(byWorkflow).reduce((sum, d) => sum + d.failed, 0);
@@ -259,19 +298,25 @@ function WorkflowsTab({ metrics }: { metrics: AggregatedMetrics }) {
 
   return (
     <div className="space-y-6">
-      {/* Summary cards */}
       <div className="grid grid-cols-4 gap-4">
         <StatCard label="Unique Workflows" value={totalWorkflows} />
         <StatCard label="Total Runs" value={totalRuns} />
-        <StatCard label="Total Failures" value={totalFailures} color={totalFailures > 0 ? 'text-accent-error' : 'text-accent-success'} />
-        <StatCard label="Failure Rate" value={`${overallFailureRate}%`} color={overallFailureRate >= 10 ? 'text-accent-error' : overallFailureRate >= 5 ? 'text-accent-warning' : 'text-accent-success'} />
+        <StatCard
+          label="Total Failures"
+          value={totalFailures}
+          color={totalFailures > 0 ? 'var(--color-error)' : 'var(--color-success)'}
+        />
+        <StatCard
+          label="Failure Rate"
+          value={`${overallFailureRate}%`}
+          color={overallFailureRate >= 10 ? 'var(--color-error)' : overallFailureRate >= 5 ? 'var(--color-warning)' : 'var(--color-success)'}
+        />
       </div>
 
-      {/* Usage chart */}
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-        <h3 className="text-sm font-medium text-text-primary mb-4">Workflow Usage</h3>
+      <div className="rounded-lg p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-outline-variant)' }}>
+        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--color-on-surface)' }}>Workflow Usage</h3>
         {workflowData.length === 0 ? (
-          <div className="text-center text-text-muted text-xs py-8">No workflow data yet</div>
+          <div className="text-center text-xs py-8" style={{ color: 'var(--color-secondary)' }}>No workflow data yet</div>
         ) : (
           <BarChart
             data={workflowData.slice(0, 8).map((d) => ({ label: d.label, value: d.value, color: d.color }))}
@@ -280,34 +325,38 @@ function WorkflowsTab({ metrics }: { metrics: AggregatedMetrics }) {
         )}
       </div>
 
-      {/* Workflow table */}
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-        <h3 className="text-sm font-medium text-text-primary mb-4">Workflow Details</h3>
+      <div className="rounded-lg p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-outline-variant)' }}>
+        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--color-on-surface)' }}>Workflow Details</h3>
         {workflowData.length === 0 ? (
-          <div className="text-center text-text-muted text-xs py-8">No workflow data yet</div>
+          <div className="text-center text-xs py-8" style={{ color: 'var(--color-secondary)' }}>No workflow data yet</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border-subtle">
-                <th className="text-left py-2 text-text-muted font-medium text-xs">Workflow</th>
-                <th className="text-right py-2 text-text-muted font-medium text-xs">Runs</th>
-                <th className="text-right py-2 text-text-muted font-medium text-xs">Failures</th>
-                <th className="text-right py-2 text-text-muted font-medium text-xs">Failure %</th>
-                <th className="text-right py-2 text-text-muted font-medium text-xs">Avg Duration</th>
+              <tr style={{ borderBottom: '1px solid var(--color-outline-variant)' }}>
+                <th className="text-left py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Workflow</th>
+                <th className="text-right py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Runs</th>
+                <th className="text-right py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Failures</th>
+                <th className="text-right py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Failure %</th>
+                <th className="text-right py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Avg Duration</th>
               </tr>
             </thead>
             <tbody>
               {workflowData.map((wf) => {
                 const failurePct = wf.value > 0 ? Math.round((wf.failed / wf.value) * 100) : 0;
                 return (
-                  <tr key={wf.label} className="border-b border-border-subtle last:border-0">
-                    <td className="py-2 text-text-primary font-mono text-xs">{wf.label}</td>
-                    <td className="py-2 text-text-muted text-xs text-right">{wf.value}</td>
-                    <td className="py-2 text-text-muted text-xs text-right">{wf.failed}</td>
-                    <td className={`py-2 text-xs text-right ${failurePct >= 10 ? 'text-accent-error' : failurePct >= 5 ? 'text-accent-warning' : 'text-accent-success'}`}>
+                  <tr key={wf.label} style={{ borderBottom: '1px solid var(--color-outline-variant)' }}>
+                    <td className="py-2 font-mono text-xs" style={{ color: 'var(--color-on-surface)' }}>{wf.label}</td>
+                    <td className="py-2 text-xs text-right" style={{ color: 'var(--color-secondary)' }}>{wf.value}</td>
+                    <td className="py-2 text-xs text-right" style={{ color: 'var(--color-secondary)' }}>{wf.failed}</td>
+                    <td
+                      className="py-2 text-xs text-right"
+                      style={{
+                        color: failurePct >= 10 ? 'var(--color-error)' : failurePct >= 5 ? 'var(--color-warning)' : 'var(--color-success)',
+                      }}
+                    >
                       {failurePct}%
                     </td>
-                    <td className="py-2 text-text-muted text-xs text-right">{formatDuration(wf.avgDuration)}</td>
+                    <td className="py-2 text-xs text-right" style={{ color: 'var(--color-secondary)' }}>{formatDuration(wf.avgDuration)}</td>
                   </tr>
                 );
               })}
@@ -319,9 +368,6 @@ function WorkflowsTab({ metrics }: { metrics: AggregatedMetrics }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab: Agents
-// ---------------------------------------------------------------------------
 function AgentsTab({ metrics }: { metrics: AggregatedMetrics }) {
   const { byAgent } = metrics;
 
@@ -331,31 +377,32 @@ function AgentsTab({ metrics }: { metrics: AggregatedMetrics }) {
       value: data.count,
       failed: data.failed,
       avgDuration: data.avgDuration,
-      color: data.failed > 0 ? 'bg-red-400' : 'bg-purple-400',
+      color: data.failed > 0 ? 'var(--color-error)' : 'var(--color-primary)',
     }))
     .sort((a, b) => b.value - a.value);
 
   const maxCount = Math.max(...agentData.map((d) => d.value), 1);
-
   const totalAgents = Object.keys(byAgent).length;
   const totalInvocations = Object.values(byAgent).reduce((sum, d) => sum + d.count, 0);
   const totalFailures = Object.values(byAgent).reduce((sum, d) => sum + d.failed, 0);
 
   return (
     <div className="space-y-6">
-      {/* Summary cards */}
       <div className="grid grid-cols-4 gap-4">
         <StatCard label="Active Agents" value={totalAgents} />
         <StatCard label="Total Invocations" value={totalInvocations} />
-        <StatCard label="Total Failures" value={totalFailures} color={totalFailures > 0 ? 'text-accent-error' : 'text-accent-success'} />
+        <StatCard
+          label="Total Failures"
+          value={totalFailures}
+          color={totalFailures > 0 ? 'var(--color-error)' : 'var(--color-success)'}
+        />
         <StatCard label="Avg Duration" value={formatDuration(metrics.avgDurationMs)} />
       </div>
 
-      {/* Agent usage chart */}
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-        <h3 className="text-sm font-medium text-text-primary mb-4">Agent Usage</h3>
+      <div className="rounded-lg p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-outline-variant)' }}>
+        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--color-on-surface)' }}>Agent Usage</h3>
         {agentData.length === 0 ? (
-          <div className="text-center text-text-muted text-xs py-8">No agent data yet</div>
+          <div className="text-center text-xs py-8" style={{ color: 'var(--color-secondary)' }}>No agent data yet</div>
         ) : (
           <BarChart
             data={agentData.slice(0, 8).map((d) => ({ label: d.label, value: d.value, color: d.color }))}
@@ -364,30 +411,32 @@ function AgentsTab({ metrics }: { metrics: AggregatedMetrics }) {
         )}
       </div>
 
-      {/* Agent table */}
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-        <h3 className="text-sm font-medium text-text-primary mb-4">Agent Performance</h3>
+      <div className="rounded-lg p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-outline-variant)' }}>
+        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--color-on-surface)' }}>Agent Performance</h3>
         {agentData.length === 0 ? (
-          <div className="text-center text-text-muted text-xs py-8">No agent data yet</div>
+          <div className="text-center text-xs py-8" style={{ color: 'var(--color-secondary)' }}>No agent data yet</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border-subtle">
-                <th className="text-left py-2 text-text-muted font-medium text-xs">Agent</th>
-                <th className="text-right py-2 text-text-muted font-medium text-xs">Invocations</th>
-                <th className="text-right py-2 text-text-muted font-medium text-xs">Failures</th>
-                <th className="text-right py-2 text-text-muted font-medium text-xs">Avg Duration</th>
+              <tr style={{ borderBottom: '1px solid var(--color-outline-variant)' }}>
+                <th className="text-left py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Agent</th>
+                <th className="text-right py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Invocations</th>
+                <th className="text-right py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Failures</th>
+                <th className="text-right py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Avg Duration</th>
               </tr>
             </thead>
             <tbody>
               {agentData.map((agent) => (
-                <tr key={agent.label} className="border-b border-border-subtle last:border-0">
-                  <td className="py-2 text-text-primary font-mono text-xs">{agent.label}</td>
-                  <td className="py-2 text-text-muted text-xs text-right">{agent.value}</td>
-                  <td className={`py-2 text-xs text-right ${agent.failed > 0 ? 'text-accent-error' : 'text-accent-success'}`}>
+                <tr key={agent.label} style={{ borderBottom: '1px solid var(--color-outline-variant)' }}>
+                  <td className="py-2 font-mono text-xs" style={{ color: 'var(--color-on-surface)' }}>{agent.label}</td>
+                  <td className="py-2 text-xs text-right" style={{ color: 'var(--color-secondary)' }}>{agent.value}</td>
+                  <td
+                    className="py-2 text-xs text-right"
+                    style={{ color: agent.failed > 0 ? 'var(--color-error)' : 'var(--color-success)' }}
+                  >
                     {agent.failed}
                   </td>
-                  <td className="py-2 text-text-muted text-xs text-right">{formatDuration(agent.avgDuration)}</td>
+                  <td className="py-2 text-xs text-right" style={{ color: 'var(--color-secondary)' }}>{formatDuration(agent.avgDuration)}</td>
                 </tr>
               ))}
             </tbody>
@@ -398,9 +447,6 @@ function AgentsTab({ metrics }: { metrics: AggregatedMetrics }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab: Resources
-// ---------------------------------------------------------------------------
 function ResourcesTab({ metrics }: { metrics: AggregatedMetrics }) {
   const { byStage } = metrics;
 
@@ -410,7 +456,7 @@ function ResourcesTab({ metrics }: { metrics: AggregatedMetrics }) {
       value: data.count,
       tokens: data.tokens,
       duration: data.duration,
-      color: data.failed > 0 ? 'bg-red-400' : 'bg-teal-400',
+      color: data.failed > 0 ? 'var(--color-error)' : 'var(--color-info)',
     }))
     .sort((a, b) => b.value - a.value);
 
@@ -419,7 +465,6 @@ function ResourcesTab({ metrics }: { metrics: AggregatedMetrics }) {
 
   return (
     <div className="space-y-6">
-      {/* Summary cards */}
       <div className="grid grid-cols-4 gap-4">
         <StatCard label="Unique Stages" value={Object.keys(byStage).length} />
         <StatCard label="Total Stage Runs" value={Object.values(byStage).reduce((sum, d) => sum + d.count, 0)} />
@@ -427,11 +472,10 @@ function ResourcesTab({ metrics }: { metrics: AggregatedMetrics }) {
         <StatCard label="Avg Duration" value={formatDuration(metrics.avgDurationMs)} />
       </div>
 
-      {/* Stage usage chart */}
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-        <h3 className="text-sm font-medium text-text-primary mb-4">Stage Usage</h3>
+      <div className="rounded-lg p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-outline-variant)' }}>
+        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--color-on-surface)' }}>Stage Usage</h3>
         {stageData.length === 0 ? (
-          <div className="text-center text-text-muted text-xs py-8">No resource data yet</div>
+          <div className="text-center text-xs py-8" style={{ color: 'var(--color-secondary)' }}>No resource data yet</div>
         ) : (
           <BarChart
             data={stageData.slice(0, 10).map((d) => ({ label: d.label, value: d.value, color: d.color }))}
@@ -440,28 +484,27 @@ function ResourcesTab({ metrics }: { metrics: AggregatedMetrics }) {
         )}
       </div>
 
-      {/* Resource table */}
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-        <h3 className="text-sm font-medium text-text-primary mb-4">Resource Usage Details</h3>
+      <div className="rounded-lg p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-outline-variant)' }}>
+        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--color-on-surface)' }}>Resource Usage Details</h3>
         {stageData.length === 0 ? (
-          <div className="text-center text-text-muted text-xs py-8">No resource data yet</div>
+          <div className="text-center text-xs py-8" style={{ color: 'var(--color-secondary)' }}>No resource data yet</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border-subtle">
-                <th className="text-left py-2 text-text-muted font-medium text-xs">Stage</th>
-                <th className="text-right py-2 text-text-muted font-medium text-xs">Runs</th>
-                <th className="text-right py-2 text-text-muted font-medium text-xs">Tokens</th>
-                <th className="text-right py-2 text-text-muted font-medium text-xs">Total Duration</th>
+              <tr style={{ borderBottom: '1px solid var(--color-outline-variant)' }}>
+                <th className="text-left py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Stage</th>
+                <th className="text-right py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Runs</th>
+                <th className="text-right py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Tokens</th>
+                <th className="text-right py-2 font-medium text-xs" style={{ color: 'var(--color-secondary)' }}>Total Duration</th>
               </tr>
             </thead>
             <tbody>
               {stageData.map((stage) => (
-                <tr key={stage.label} className="border-b border-border-subtle last:border-0">
-                  <td className="py-2 text-text-primary font-mono text-xs">{stage.label}</td>
-                  <td className="py-2 text-text-muted text-xs text-right">{stage.value}</td>
-                  <td className="py-2 text-text-muted text-xs text-right">{formatNumber(stage.tokens)}</td>
-                  <td className="py-2 text-text-muted text-xs text-right">{formatDuration(stage.duration)}</td>
+                <tr key={stage.label} style={{ borderBottom: '1px solid var(--color-outline-variant)' }}>
+                  <td className="py-2 font-mono text-xs" style={{ color: 'var(--color-on-surface)' }}>{stage.label}</td>
+                  <td className="py-2 text-xs text-right" style={{ color: 'var(--color-secondary)' }}>{stage.value}</td>
+                  <td className="py-2 text-xs text-right" style={{ color: 'var(--color-secondary)' }}>{formatNumber(stage.tokens)}</td>
+                  <td className="py-2 text-xs text-right" style={{ color: 'var(--color-secondary)' }}>{formatDuration(stage.duration)}</td>
                 </tr>
               ))}
             </tbody>
@@ -472,9 +515,6 @@ function ResourcesTab({ metrics }: { metrics: AggregatedMetrics }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab: System
-// ---------------------------------------------------------------------------
 interface HealthStatus {
   status: string;
   version: string;
@@ -511,73 +551,59 @@ function SystemTab() {
 
   return (
     <div className="space-y-6">
-      {/* Summary cards */}
       <div className="grid grid-cols-4 gap-4">
         <StatCard
           label="MCP Health"
           value={loading ? '...' : (health?.status === 'healthy' ? 'Healthy' : 'Degraded')}
-          color={loading ? 'text-text-muted' : health?.status === 'healthy' ? 'text-accent-success' : 'text-accent-warning'}
+          color={loading ? 'var(--color-secondary)' : health?.status === 'healthy' ? 'var(--color-success)' : 'var(--color-warning)'}
         />
-        <StatCard label="Version" value={loading ? '...' : (health?.version || '—')} />
+        <StatCard label="Version" value={loading ? '...' : (health?.version || '\u2014')} />
         <StatCard label="Uptime" value={loading ? '...' : formatUptime(health?.uptime_seconds || 0)} />
-        <StatCard label="SSE Stream" value="Active" color="text-accent-success" />
+        <StatCard label="SSE Stream" value="Active" color="var(--color-success)" />
       </div>
 
-      {/* System health details */}
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-        <h3 className="text-sm font-medium text-text-primary mb-4">System Health</h3>
+      <div className="rounded-lg p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-outline-variant)' }}>
+        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--color-on-surface)' }}>System Health</h3>
         {loading ? (
-          <div className="text-center text-text-muted text-xs py-8">Loading...</div>
+          <div className="text-center text-xs py-8" style={{ color: 'var(--color-secondary)' }}>Loading...</div>
         ) : (
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-text-muted">MCP Server</span>
-              <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${health?.status === 'healthy' ? 'bg-green-400' : 'bg-yellow-400'}`} />
-                <span className="text-xs text-text-primary">{health?.status === 'healthy' ? 'Operational' : 'Degraded'}</span>
+            {[
+              { label: 'MCP Server', ok: health?.status === 'healthy', okLabel: 'Operational', failLabel: 'Degraded' },
+              { label: 'Metrics SSE Stream', ok: true, okLabel: 'Connected', failLabel: '' },
+              { label: 'Registry', ok: true, okLabel: 'Operational', failLabel: '' },
+              { label: 'Artifact Storage', ok: true, okLabel: 'Operational', failLabel: '' },
+            ].map((item) => (
+              <div key={item.label} className="flex items-center justify-between">
+                <span className="text-xs" style={{ color: 'var(--color-secondary)' }}>{item.label}</span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ background: item.ok ? 'var(--color-success)' : 'var(--color-warning)' }}
+                  />
+                  <span className="text-xs" style={{ color: 'var(--color-on-surface)' }}>
+                    {item.ok ? item.okLabel : item.failLabel}
+                  </span>
+                </div>
               </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-text-muted">Metrics SSE Stream</span>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-400" />
-                <span className="text-xs text-text-primary">Connected</span>
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-text-muted">Registry</span>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-400" />
-                <span className="text-xs text-text-primary">Operational</span>
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-text-muted">Artifact Storage</span>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-400" />
-                <span className="text-xs text-text-primary">Operational</span>
-              </div>
-            </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* SSE connection info */}
-      <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-        <h3 className="text-sm font-medium text-text-primary mb-4">Stream Health</h3>
+      <div className="rounded-lg p-4" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-outline-variant)' }}>
+        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--color-on-surface)' }}>Stream Health</h3>
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-text-muted">Metrics SSE</span>
-            <span className="text-xs text-accent-success">/metrics/sse</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-text-muted">Connection</span>
-            <span className="text-xs text-accent-success">Active</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-text-muted">Filter</span>
-            <span className="text-xs text-text-secondary">All executions (*)</span>
-          </div>
+          {[
+            { label: 'Metrics SSE', value: '/metrics/sse', color: 'var(--color-success)' },
+            { label: 'Connection', value: 'Active', color: 'var(--color-success)' },
+            { label: 'Filter', value: 'All executions (*)', color: 'var(--color-on-surface)' },
+          ].map((item) => (
+            <div key={item.label} className="flex items-center justify-between">
+              <span className="text-xs" style={{ color: 'var(--color-secondary)' }}>{item.label}</span>
+              <span className="text-xs" style={{ color: item.color }}>{item.value}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>

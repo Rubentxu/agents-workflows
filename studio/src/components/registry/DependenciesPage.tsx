@@ -42,14 +42,14 @@ interface DepEdge {
 }
 
 const KIND_COLORS: Record<NodeKind, { bg: string; border: string; text: string }> = {
-  workflow: { bg: 'rgba(59,130,246,0.1)', border: '#3b82f6', text: 'text-blue-400' },
-  agent: { bg: 'rgba(168,85,247,0.1)', border: '#a855f7', text: 'text-purple-400' },
-  skill: { bg: 'rgba(34,197,94,0.1)', border: '#22c55e', text: 'text-green-400' },
-  prompt: { bg: 'rgba(59,130,246,0.1)', border: '#3b82f6', text: 'text-blue-400' },
-  tool: { bg: 'rgba(249,115,22,0.1)', border: '#f97316', text: 'text-orange-400' },
-  template: { bg: 'rgba(6,182,212,0.1)', border: '#06b6d4', text: 'text-cyan-400' },
-  execution: { bg: 'rgba(234,179,8,0.1)', border: '#eab308', text: 'text-yellow-400' },
-  artifact: { bg: 'rgba(236,72,153,0.1)', border: '#ec4899', text: 'text-pink-400' },
+  workflow: { bg: 'color-mix(in srgb, var(--color-primary) 10%, transparent)', border: 'var(--color-primary)', text: 'text-primary' },
+  agent: { bg: 'color-mix(in srgb, var(--color-secondary) 10%, transparent)', border: 'var(--color-secondary)', text: 'text-secondary' },
+  skill: { bg: 'color-mix(in srgb, var(--color-success) 10%, transparent)', border: 'var(--color-success)', text: 'text-success' },
+  prompt: { bg: 'color-mix(in srgb, var(--color-info) 10%, transparent)', border: 'var(--color-info)', text: 'text-info' },
+  tool: { bg: 'color-mix(in srgb, var(--color-warning) 10%, transparent)', border: 'var(--color-warning)', text: 'text-warning' },
+  template: { bg: 'color-mix(in srgb, var(--color-info) 10%, transparent)', border: 'var(--color-info)', text: 'text-info' },
+  execution: { bg: 'color-mix(in srgb, var(--color-warning) 10%, transparent)', border: 'var(--color-warning)', text: 'text-warning' },
+  artifact: { bg: 'color-mix(in srgb, var(--color-error) 10%, transparent)', border: 'var(--color-error)', text: 'text-error' },
 };
 
 export function DependenciesPage() {
@@ -129,10 +129,10 @@ export function DependenciesPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant">
         <div>
-          <h1 className="text-lg font-semibold text-text-primary">Dependencies</h1>
-          <p className="text-sm text-text-muted mt-0.5">
+          <h1 className="text-lg font-semibold text-on-surface">Dependencies</h1>
+          <p className="text-sm text-secondary mt-0.5">
             {projectId ? `Project: ${projectId}` : 'Registry'} — {nodes.length} resources, {edges.length} relationships
           </p>
         </div>
@@ -157,15 +157,15 @@ export function DependenciesPage() {
             edges={rfEdges}
             onNodeClick={handleNodeClick}
             fitView
-            className="bg-bg-canvas"
+            className="bg-background"
           >
             <Background gap={20} color="var(--color-border-subtle)" />
-            <Controls className="!border-border-subtle !bg-bg-surface" />
+            <Controls className="!border-outline-variant !bg-surface" />
             <MiniMap
-              className="!border-border-subtle !bg-bg-surface"
+              className="!border-outline-variant !bg-surface"
               nodeColor={(n) => {
                 const depNode = nodes.find((dn) => dn.id === n.id);
-                if (!depNode) return '#6b7280';
+                if (!depNode) return 'var(--color-secondary)';
                 return KIND_COLORS[depNode.kind].border;
               }}
             />
@@ -174,8 +174,8 @@ export function DependenciesPage() {
 
         {/* Detail panel */}
         {selectedNode && (
-          <div className="w-72 border-l border-border-subtle bg-bg-surface flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
+          <div className="w-72 border-l border-outline-variant bg-surface flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant">
               <div className="flex items-center gap-2">
                 <div className={`w-2.5 h-2.5 rounded-full`} style={{ background: KIND_COLORS[selectedNode.kind].border }} />
                 <span className={`text-xs font-medium ${KIND_COLORS[selectedNode.kind].text}`}>
@@ -184,7 +184,7 @@ export function DependenciesPage() {
               </div>
               <button
                 onClick={() => setSelectedNode(null)}
-                className="text-text-muted hover:text-text-primary text-sm transition-colors"
+                className="text-secondary hover:text-on-surface text-sm transition-colors"
               >
                 ✕
               </button>
@@ -192,56 +192,56 @@ export function DependenciesPage() {
 
             <div className="flex-1 overflow-auto p-4 space-y-4">
               <div>
-                <div className="text-xs text-text-muted mb-1">Name</div>
-                <div className="text-sm font-medium text-text-primary">{selectedNode.name}</div>
+                <div className="text-xs text-secondary mb-1">Name</div>
+                <div className="text-sm font-medium text-on-surface">{selectedNode.name}</div>
               </div>
 
               <div>
-                <div className="text-xs text-text-muted mb-1">ARN</div>
-                <div className="text-xs font-mono text-text-secondary bg-bg-elevated rounded px-2 py-1.5 break-all">
+                <div className="text-xs text-secondary mb-1">ARN</div>
+                <div className="text-xs font-mono text-secondary bg-surface-container rounded px-2 py-1.5 break-all">
                   {selectedNode.arn}
                 </div>
               </div>
 
               <div>
-                <div className="text-xs text-text-muted mb-1">Type</div>
-                <div className="text-sm text-text-primary">{kindLabel[selectedNode.kind]}</div>
+                <div className="text-xs text-secondary mb-1">Type</div>
+                <div className="text-sm text-on-surface">{kindLabel[selectedNode.kind]}</div>
               </div>
 
               {/* Inbound dependencies */}
               <div>
-                <div className="text-xs text-text-muted mb-2">Inbound ({edges.filter(e => e.to === selectedNode.id).length})</div>
+                <div className="text-xs text-secondary mb-2">Inbound ({edges.filter(e => e.to === selectedNode.id).length})</div>
                 <div className="space-y-1">
                   {edges.filter(e => e.to === selectedNode.id).map((e) => {
                     const src = nodes.find(n => n.id === e.from);
                     return (
                       <div key={`${e.from}-${e.to}`} className="flex items-center gap-2 text-xs">
-                        <span className="text-text-muted font-mono truncate max-w-[120px]">{src?.name}</span>
-                        {e.label && <span className="text-text-muted">→ {e.label}</span>}
+                        <span className="text-secondary font-mono truncate max-w-[120px]">{src?.name}</span>
+                        {e.label && <span className="text-secondary">→ {e.label}</span>}
                       </div>
                     );
                   })}
                   {edges.filter(e => e.to === selectedNode.id).length === 0 && (
-                    <div className="text-xs text-text-muted italic">None</div>
+                    <div className="text-xs text-secondary italic">None</div>
                   )}
                 </div>
               </div>
 
               {/* Outbound dependencies */}
               <div>
-                <div className="text-xs text-text-muted mb-2">Outbound ({edges.filter(e => e.from === selectedNode.id).length})</div>
+                <div className="text-xs text-secondary mb-2">Outbound ({edges.filter(e => e.from === selectedNode.id).length})</div>
                 <div className="space-y-1">
                   {edges.filter(e => e.from === selectedNode.id).map((e) => {
                     const tgt = nodes.find(n => n.id === e.to);
                     return (
                       <div key={`${e.from}-${e.to}`} className="flex items-center gap-2 text-xs">
-                        <span className="text-text-muted font-mono truncate max-w-[120px]">{tgt?.name}</span>
-                        {e.label && <span className="text-text-muted">→ {e.label}</span>}
+                        <span className="text-secondary font-mono truncate max-w-[120px]">{tgt?.name}</span>
+                        {e.label && <span className="text-secondary">→ {e.label}</span>}
                       </div>
                     );
                   })}
                   {edges.filter(e => e.from === selectedNode.id).length === 0 && (
-                    <div className="text-xs text-text-muted italic">None</div>
+                    <div className="text-xs text-secondary italic">None</div>
                   )}
                 </div>
               </div>

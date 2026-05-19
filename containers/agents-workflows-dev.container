@@ -1,0 +1,51 @@
+# =============================================================================
+# Podman Quadlet unit for agents-workflows (DEVELOPMENT VERSION)
+# =============================================================================
+# This version is for LOCAL development - no AutoUpdate from registry
+# 
+# Install (system-wide): sudo cp this file to /etc/containers/systemd/
+# Or (user-level):       cp to ~/.config/containers/systemd/
+#
+# For production with auto-update, use agents-workflows-prod.container
+# =============================================================================
+
+[Unit]
+Description=Agents Workflow MCP Server (Dev)
+Documentation=https://github.com/gentle-ai/agents-workflows
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+# Local image (no registry auto-update)
+Image=localhost/agents-workflows:latest
+
+# Container identity
+ContainerName=agents-workflows
+
+# Ports (host:container)
+PublishPort=8080:8080/tcp
+PublishPort=8081:8081/tcp
+
+# Volume mounts for persistence
+Volume=agents-workflows-data:/home/appuser/.workflows:rw
+
+# Environment
+Environment=WORKSPACE=/home/appuser/.workflows
+Environment=RUST_LOG=info
+Environment=PORT=8080
+
+# Restart policy - keep running
+Restart=always
+RestartSec=10
+
+# Health check
+HealthCmd=curl -f http://localhost:8080/api/health || exit 1
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+
+# Mount source code for hot-reload (optional, uncomment if wanted)
+# Volume={{ PATH_TO_PROJECT }}/target/release/workflow-mcp:/usr/local/bin/workflow-mcp:ro
+
+[Install]
+WantedBy=multi-user.target default.target

@@ -1,0 +1,274 @@
+name: E2E Tests
+
+on:
+  push:
+    tags:
+      - 'test:*'
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Test type to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - unit
+          - e2e
+          - ui
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # =============================================================================
+  # Unit Tests (Rust)
+  # =============================================================================
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || contains(github.ref, 'test:unit')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          version: 1.88
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run unit tests
+        run: cargo test --workspace
+
+  # =============================================================================
+  # E2E Tests (Playwright)
+  # =============================================================================
+  test-e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: test-unit
+    if: github.event_name == 'workflow_dispatch' || contains(github.ref, 'test:e2e')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          version: 1.88
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build container image
+        run: |
+          podman build \
+            --tag localhost/agents-workflows:test \
+            --file Containerfile .
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright
+        run: |
+          cd tests
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Start container
+        run: |
+          bash tests/containers/start-container.sh
+
+      - name: Wait for service
+        run: |
+          echo "Waiting for service..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:8081/health > /dev/null 2>&1; then
+              echo "Service is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Service failed to start"
+          podman logs agents-workflows-tests
+          exit 1
+
+      - name: Run E2E tests
+        run: |
+          cd tests
+          npx playwright test --project=api --project=mcp --project=workflows
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-e2e
+          path: tests/test-results/
+          retention-days: 7
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-e2e
+          path: tests/playwright-report/
+          retention-days: 14
+
+      - name: Stop container
+        if: always()
+        run: bash tests/containers/stop-container.sh
+
+  # =============================================================================
+  # UI Tests (Playwright Browser)
+  # =============================================================================
+  test-ui:
+    name: UI Tests
+    runs-on: ubuntu-latest
+    needs: test-e2e
+    if: github.event_name == 'workflow_dispatch' || contains(github.ref, 'test:ui')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          version: 1.88
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build container image
+        run: |
+          podman build \
+            --tag localhost/agents-workflows:test \
+            --file Containerfile .
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright
+        run: |
+          cd tests
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Start container
+        run: |
+          bash tests/containers/start-container.sh
+
+      - name: Wait for service
+        run: |
+          echo "Waiting for service..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:8081/health > /dev/null 2>&1; then
+              echo "Service is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Service failed to start"
+          podman logs agents-workflows-tests
+          exit 1
+
+      - name: Run UI tests
+        run: |
+          cd tests
+          npx playwright test --project=chromium
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-screenshots-ui
+          path: tests/test-results/**/screenshots/
+          retention-days: 7
+
+      - name: Stop container
+        if: always()
+        run: bash tests/containers/stop-container.sh
+
+  # =============================================================================
+  # Full Test Suite (triggered by 'test:all' tag or manual)
+  # =============================================================================
+  test-all:
+    name: Full Test Suite
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          version: 1.88
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run all Rust tests
+        run: cargo test --workspace
+
+      - name: Build container image
+        run: |
+          podman build \
+            --tag localhost/agents-workflows:test \
+            --file Containerfile .
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright
+        run: |
+          cd tests
+          npm install
+          npx playwright install --with-deps
+
+      - name: Start container
+        run: bash tests/containers/start-container.sh
+
+      - name: Run all Playwright tests
+        run: |
+          cd tests
+          npx playwright test
+
+      - name: Upload all test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-all
+          path: tests/test-results/
+          retention-days: 7
+
+      - name: Upload all reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-reports-all
+          path: tests/playwright-report/
+          retention-days: 14
+
+      - name: Stop container
+        if: always()
+        run: bash tests/containers/stop-container.sh

@@ -1,0 +1,21 @@
+arn: arn:local:global:agent/orchestrator
+name: orchestrator
+description: Workflow orchestrator agent - coordinates workflow execution via MCP
+model: minimax-coding-plan/MiniMax-M2.7-highspeed
+skills:
+  - arn:local:global:skill/sdd-explore
+  - arn:local:global:skill/sdd-apply
+  - arn:local:global:skill/sdd-propose
+  - arn:local:global:skill/sdd-spec
+  - arn:local:global:skill/sdd-design
+  - arn:local:global:skill/sdd-tasks
+  - arn:local:global:skill/sdd-verify
+  - arn:local:global:skill/sdd-archive
+tools:
+  - workflow_execute
+  - workflow_update_state
+  - workflow_get_state
+  - workflow_get_next_stage
+  - insights_log
+  - metrics_emit
+timeout_ms: 300000

@@ -1,0 +1,167 @@
+/**
+ * WorkflowInspector — right panel for editing selected stage properties.
+ * Part of the WorkflowEditor hybrid editing surface.
+ */
+
+import { useState, useCallback } from 'react';
+import type { Node } from '@xyflow/react';
+import type { StageNodeData } from '../nodes/WorkflowStageNode';
+
+interface WorkflowInspectorProps {
+  node: Node<StageNodeData, 'stage'>;
+  workflow: {
+    spec?: {
+      stages?: Array<{
+        id: string;
+        agent: string;
+        depends_on: string[];
+        description: string;
+        input: Record<string, unknown>;
+        execution: { mode: string; retry: { max_attempts: number; backoff_ms: number } };
+        conditions: Array<{ when: string; operator: string; value: unknown }>;
+      }>;
+    };
+  } | null;
+  onUpdate: (data: Partial<StageNodeData>) => void;
+  onClose: () => void;
+}
+
+export function WorkflowInspector({ node, workflow, onUpdate, onClose }: WorkflowInspectorProps) {
+  const stageData = workflow?.spec?.stages?.find((s) => s.id === node.id);
+
+  const [localData, setLocalData] = useState<StageNodeData>({
+    ...node.data,
+    ...stageData,
+  });
+
+  const handleChange = useCallback((field: keyof StageNodeData, value: unknown) => {
+    const updated = { ...localData, [field]: value };
+    setLocalData(updated);
+    onUpdate({ [field]: value });
+  }, [localData, onUpdate]);
+
+  return (
+    <div className="w-80 border-l border-border-subtle bg-bg-surface flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
+        <div>
+          <h3 className="text-sm font-semibold text-text-primary">Stage Inspector</h3>
+          <p className="text-xs text-text-muted font-mono mt-0.5">{node.id}</p>
+        </div>
+        <button
+          onClick={onClose}
+          className="text-text-muted hover:text-text-primary transition-colors text-sm"
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* Form */}
+      <div className="flex-1 overflow-auto p-4 space-y-4">
+        {/* Stage ID (readonly) */}
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1">Stage ID</label>
+          <input
+            type="text"
+            value={localData.id}
+            readOnly
+            className="w-full text-sm bg-bg-elevated border border-border-subtle rounded px-3 py-2 text-text-secondary outline-none font-mono"
+          />
+        </div>
+
+        {/* Label */}
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1">Label</label>
+          <input
+            type="text"
+            value={localData.label}
+            onChange={(e) => handleChange('label', e.target.value)}
+            className="w-full text-sm bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary outline-none focus:border-accent"
+          />
+        </div>
+
+        {/* Description */}
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1">Description</label>
+          <textarea
+            value={localData.description ?? ''}
+            onChange={(e) => handleChange('description', e.target.value)}
+            rows={2}
+            className="w-full text-sm bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary outline-none focus:border-accent resize-none"
+          />
+        </div>
+
+        {/* Agent */}
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1">Agent ARN</label>
+          <input
+            type="text"
+            value={localData.agent ?? stageData?.agent ?? ''}
+            onChange={(e) => handleChange('agent', e.target.value)}
+            placeholder="arn:local:global:agent/..."
+            className="w-full text-sm bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary outline-none focus:border-accent font-mono"
+          />
+        </div>
+
+        {/* Execution mode */}
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1">Execution Mode</label>
+          <select
+            value={localData.executionMode ?? stageData?.execution?.mode ?? 'sequential'}
+            onChange={(e) => handleChange('executionMode', e.target.value)}
+            className="w-full text-sm bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-secondary outline-none focus:border-accent"
+          >
+            <option value="sequential">Sequential</option>
+            <option value="parallel">Parallel</option>
+            <option value="batch">Batch</option>
+          </select>
+        </div>
+
+        {/* Dependencies */}
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1">Depends On</label>
+          <input
+            type="text"
+            value={(localData.dependsOn ?? stageData?.depends_on ?? []).join(', ')}
+            onChange={(e) =>
+              handleChange(
+                'dependsOn',
+                e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+              )
+            }
+            placeholder="stage1, stage2"
+            className="w-full text-sm bg-bg-surface border border-border-subtle rounded px-3 py-2 text-text-primary outline-none focus:border-accent font-mono"
+          />
+          <p className="text-[10px] text-text-muted mt-1">Comma-separated stage IDs</p>
+        </div>
+
+        {/* Retry config */}
+        {stageData && (
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Retry Config</label>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] text-text-muted mb-0.5">Max attempts</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={stageData.execution?.retry?.max_attempts ?? 1}
+                  className="w-full text-sm bg-bg-surface border border-border-subtle rounded px-2 py-1.5 text-text-primary outline-none focus:border-accent"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-text-muted mb-0.5">Backoff (ms)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={stageData.execution?.retry?.backoff_ms ?? 1000}
+                  className="w-full text-sm bg-bg-surface border border-border-subtle rounded px-2 py-1.5 text-text-primary outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

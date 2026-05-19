@@ -1,0 +1,37 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Node / Studio
+studio/node_modules/
+studio/dist/
+studio/.vite/
+studio/tsconfig.tsbuildinfo
+
+# E2E test dependencies (install separately)
+tests/node_modules/
+tests/test-results/
+tests/playwright-report/
+tests/**/*.pyc
+tests/**/__pycache__/
+
+# CogniCode (local dev DB)
+.cognicode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+
+# Runtime data
+.workflows/

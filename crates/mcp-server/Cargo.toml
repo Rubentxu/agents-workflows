@@ -1,0 +1,57 @@
+[package]
+name = "mcp-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "workflow-mcp"
+path = "src/main.rs"
+
+[features]
+default = []
+embedded-studio = ["include_dir", "include_dir_macros"]
+
+[dependencies]
+registry = { path = "../registry" }
+workflow = { path = "../workflow" }
+artifact = { path = "../artifact" }
+metrics = { path = "../metrics" }
+insights = { path = "../insights" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rmcp.workspace = true
+process-wrap.workspace = true
+futures-util.workspace = true
+axum.workspace = true
+http-body-util.workspace = true
+http-body.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+tower.workspace = true
+tower-http = { version = "0.6", features = ["cors"] }
+uuid = { version = "1.11", features = ["v4"] }
+chrono = { workspace = true, features = ["clock", "serde"] }
+rusqlite.workspace = true
+include_dir = { version = "0.7", optional = true }
+include_dir_macros = { version = "0.7", optional = true }
+mime = "0.3"
+mime_guess = "2.0"
+clap = { version = "4", features = ["derive"] }
+shellexpand = "3"
+serde_yaml = "0.9"
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+tokio-test = "0.4"
+tower = "0.5"
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http = "1"
+tempfile = "3"
+urlencoding = "2"

@@ -1,0 +1,264 @@
+{
+  "$schema": "https://opencode.ai/schema/opencode-mcp-config.json",
+  "mcpServers": {
+    "agents-workflows": {
+      "transport": "streamable-http",
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream"
+      },
+      "capabilities": {
+        "tools": true,
+        "resources": true
+      },
+      "metadata": {
+        "name": "agents-workflows",
+        "description": "Agentic Workflow System - MCP server for workflow orchestration"
+      }
+    }
+  },
+  "tools": {
+    "workflow": {
+      "list": {
+        "description": "List all registered workflows",
+        "parameters": {
+          "scope": { "type": "string", "enum": ["global", "workspace/{id}"], "required": false },
+          "type": { "type": "string", "enum": ["all", "default", "custom"], "required": false }
+        }
+      },
+      "get": {
+        "description": "Get full workflow definition with DAG",
+        "parameters": {
+          "workflow_arn": { "type": "string", "required": true }
+        }
+      },
+      "get_dag": {
+        "description": "Get workflow DAG structure for visualization",
+        "parameters": {
+          "workflow_arn": { "type": "string", "required": true }
+        }
+      },
+      "execute": {
+        "description": "Start a workflow execution",
+        "parameters": {
+          "workflow_arn": { "type": "string", "required": true },
+          "workspace_id": { "type": "string", "required": false },
+          "input": { "type": "object", "required": false }
+        }
+      },
+      "get_state": {
+        "description": "Get current execution state",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": true }
+        }
+      },
+      "update_state": {
+        "description": "Update execution state",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": true },
+          "status": { "type": "string", "required": true },
+          "current_stage": { "type": "string", "required": false },
+          "completed_stages": { "type": "array", "items": { "type": "string" }, "required": false }
+        }
+      },
+      "get_next_stage": {
+        "description": "Get suggested next stage based on DAG",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": true }
+        }
+      },
+      "abort": {
+        "description": "Abort a running execution",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": true }
+        }
+      }
+    },
+    "agent": {
+      "list": {
+        "description": "List all agents",
+        "parameters": {
+          "scope": { "type": "string", "enum": ["global", "workspace/{id}"], "required": false }
+        }
+      },
+      "get": {
+        "description": "Get agent definition",
+        "parameters": {
+          "agent_arn": { "type": "string", "required": true }
+        }
+      },
+      "query": {
+        "description": "Query agents by search term",
+        "parameters": {
+          "query": { "type": "string", "required": true },
+          "scope": { "type": "string", "required": false }
+        }
+      }
+    },
+    "skill": {
+      "list": {
+        "description": "List all skills",
+        "parameters": {
+          "scope": { "type": "string", "enum": ["global", "workspace/{id}"], "required": false }
+        }
+      },
+      "get": {
+        "description": "Get skill definition (SKILL.md content)",
+        "parameters": {
+          "skill_arn": { "type": "string", "required": true }
+        }
+      },
+      "query": {
+        "description": "Query skills by triggers or criteria",
+        "parameters": {
+          "triggers": { "type": "array", "items": { "type": "string" }, "required": false },
+          "query": { "type": "string", "required": false },
+          "scope": { "type": "string", "required": false }
+        }
+      }
+    },
+    "prompt": {
+      "list": {
+        "description": "List all prompts",
+        "parameters": {
+          "scope": { "type": "string", "enum": ["global", "workspace/{id}"], "required": false }
+        }
+      },
+      "get": {
+        "description": "Get prompt template",
+        "parameters": {
+          "prompt_arn": { "type": "string", "required": true }
+        }
+      }
+    },
+    "execution": {
+      "list": {
+        "description": "List executions with filters",
+        "parameters": {
+          "workspace_id": { "type": "string", "required": false },
+          "workflow_arn": { "type": "string", "required": false },
+          "status": { "type": "string", "enum": ["pending", "running", "completed", "failed", "aborted"], "required": false },
+          "limit": { "type": "number", "required": false },
+          "offset": { "type": "number", "required": false }
+        }
+      },
+      "get": {
+        "description": "Get execution details",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": true }
+        }
+      },
+      "history": {
+        "description": "Get execution history",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": true },
+          "limit": { "type": "number", "required": false }
+        }
+      }
+    },
+    "artifact": {
+      "create": {
+        "description": "Create an artifact",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": true },
+          "stage_id": { "type": "string", "required": false },
+          "name": { "type": "string", "required": true },
+          "content": { "type": "string", "required": true },
+          "content_type": { "type": "string", "enum": ["markdown", "text/markdown", "text/plain", "application/json"], "required": true }
+        }
+      },
+      "get": {
+        "description": "Get artifact content",
+        "parameters": {
+          "artifact_arn": { "type": "string", "required": true }
+        }
+      },
+      "list": {
+        "description": "List artifacts for an execution",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": false },
+          "limit": { "type": "number", "required": false }
+        }
+      }
+    },
+    "insights": {
+      "log": {
+        "description": "Log an insight event",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": true },
+          "stage_id": { "type": "string", "required": false },
+          "insight_type": { "type": "string", "required": true },
+          "data": { "type": "object", "required": true }
+        }
+      },
+      "query": {
+        "description": "Query insights for analysis",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": false },
+          "stage_id": { "type": "string", "required": false },
+          "insight_type": { "type": "string", "required": false },
+          "from": { "type": "string", "format": "date-time", "required": false },
+          "to": { "type": "string", "format": "date-time", "required": false },
+          "limit": { "type": "number", "required": false }
+        }
+      },
+      "aggregate": {
+        "description": "Aggregate insights for analytics",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": true },
+          "stage_id": { "type": "string", "required": false }
+        }
+      }
+    },
+    "metrics": {
+      "query": {
+        "description": "Query execution metrics",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": true },
+          "stage_id": { "type": "string", "required": false }
+        }
+      },
+      "subscribe": {
+        "description": "Get SSE URL for metrics subscription",
+        "parameters": {
+          "execution_arn": { "type": "string", "required": false }
+        }
+      }
+    }
+  },
+  "resources": {
+    "arn://registry/workflows": "All registered workflows",
+    "arn://registry/agents": "All registered agents",
+    "arn://registry/skills": "All registered skills",
+    "arn://registry/prompts": "All registered prompts",
+    "arn://registry/executions": "Recent executions",
+    "arn://registry/artifacts": "Recent artifacts"
+  },
+  "examples": {
+    "workflow_execution": {
+      "description": "Execute the SDD full workflow",
+      "tool": "workflow_execute",
+      "parameters": {
+        "workflow_arn": "arn:local:global:workflow/sdd-full",
+        "input": { "goal": "implement user authentication" }
+      }
+    },
+    "execution_tracking": {
+      "description": "Track execution through stages",
+      "steps": [
+        { "tool": "workflow_get_state", "params": { "execution_arn": "$exec_arn" } },
+        { "tool": "insights_log", "params": { "execution_arn": "$exec_arn", "stage_id": "explore", "insight_type": "stage_completed", "data": {} } },
+        { "tool": "workflow_update_state", "params": { "execution_arn": "$exec_arn", "status": "running", "current_stage": "propose", "completed_stages": ["explore"] } }
+      ]
+    }
+  },
+  "arn_formats": {
+    "workflow": "arn:local:{scope}:workflow/{name}",
+    "agent": "arn:local:{scope}:agent/{name}",
+    "skill": "arn:local:{scope}:skill/{name}",
+    "prompt": "arn:local:{scope}:prompt/{name}",
+    "execution": "arn:local:workspace/{workspace_id}:execution/{run_id}",
+    "artifact": "arn:local:workspace/{workspace_id}:artifact/{name}"
+  }
+}

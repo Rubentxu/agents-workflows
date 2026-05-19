@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/registry",
+    "crates/workflow",
+    "crates/artifact",
+    "crates/metrics",
+    "crates/insights",
+    "crates/mcp-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["gentleman-programming"]
+
+[workspace.dependencies]
+tokio = { version = "1.45", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal", "process", "io-util"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+rusqlite = { version = "0.31", features = ["bundled"] }
+anyhow = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rmcp = { version = "1.7", features = ["server", "client", "transport-streamable-http-server", "transport-child-process"] }
+process-wrap = "9.1"
+futures-util = "0.3"
+parking_lot = "0.12"
+dashmap = "5"
+indexmap = "2"
+chrono = { version = "0.4", features = ["clock", "serde"] }
+blake3 = "1.5"
+walkdir = "2"
+glob = "0.3"
+regex = "1"
+async-trait = "0.1"
+reqwest = { version = "0.12", features = ["json"] }
+once_cell = "1.19"
+tokio-stream = "0.1"
+axum = "0.7"
+http-body-util = "0.1"
+http-body = "1.0"
+hyper = { version = "1.5", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.6", features = ["cors"] }

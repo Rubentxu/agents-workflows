@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts - these are rebuilt inside container
+target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docs (not needed for build)
+docs/
+*.md
+
+# Test files
+tests/
+**/*.test
+**/*.spec
+
+# Docker
+Containerfile*
+.dockerignore
+containers/
+
+# Scripts (not needed in container)
+scripts/
+
+# Local config
+.env
+.env.local
+*.local
+
+# Node modules (not needed in container, studio files are pre-built)
+studio/node_modules

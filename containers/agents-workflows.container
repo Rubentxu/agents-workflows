@@ -1,0 +1,62 @@
+# =============================================================================
+# Podman Quadlet unit for agents-workflows
+# =============================================================================
+# Install:  cp containers/agents-workflows.container /etc/containers/systemd/
+# Reload:   systemctl --user daemon-reload
+# Start:    systemctl --user start agents-workflows
+# Enable:   systemctl --user enable --now agents-workflows
+# Status:   systemctl --user status agents-workflows
+# Logs:     journalctl --user -u agents-workflows -f
+# =============================================================================
+
+[Unit]
+Description=Agents Workflow MCP Server
+Documentation=https://github.com/gentle-ai/agents-workflows
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+# Image and build
+Image=localhost/agents-workflows:latest
+AutoUpdate=registry
+
+# Container identity
+ContainerName=agents-workflows
+
+# Ports (host:container)
+PublishPort=8080:8080/tcp
+PublishPort=8081:8081/tcp
+
+# Volume mounts for persistence
+Volume=agents-workflows-data:/home/appuser/.workflows:rw
+
+# Environment
+Environment=WORKSPACE=/home/appuser/.workflows
+Environment=STUDIO_PATH=/home/appuser/.workflows/studio
+Environment=RUST_LOG=info
+Environment=PORT=8080
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Health check
+HealthCmd=curl -f http://localhost:8080/api/health || exit 1
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+
+# Security: read-only root filesystem (optional, enable if working)
+# ReadOnly=true
+
+# Resource limits (optional)
+# MemoryMax=512M
+# CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target default.target
+
+[Socket]
+# Socket activation for port 8080 (optional, for on-demand startup)
+# ListenStream=8080
+# ListenStream=8081

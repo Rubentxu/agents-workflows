@@ -1,0 +1,16 @@
+[Unit]
+Description=agents-workflows MCP Server
+Requires=agents-workflows.socket
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=__SYSTEM_INSTALL_DIR__/workflow-mcp start
+ExecStartPre=__SYSTEM_INSTALL_DIR__/workflow-mcp init
+RemainAfterExit=yes
+Environment=WORKSPACE_DIR=/var/lib/agents-workflows
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

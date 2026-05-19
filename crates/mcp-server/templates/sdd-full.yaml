@@ -1,0 +1,94 @@
+arn: arn:local:global:workflow/sdd-full
+name: "SDD Full Pipeline"
+version: "1.0"
+description: "Spec-Driven Development complete workflow - explore, propose, spec, design, tasks, apply, verify, archive"
+
+agents:
+  orchestrator:
+    description: "Main orchestrator agent"
+    model: minimax-coding-plan/MiniMax-M2.7-highspeed
+    skills:
+      - arn:local:global:skill/sdd-explore
+      - arn:local:global:skill/sdd-propose
+      - arn:local:global:skill/sdd-spec
+      - arn:local:global:skill/sdd-design
+      - arn:local:global:skill/sdd-tasks
+      - arn:local:global:skill/sdd-apply
+      - arn:local:global:skill/sdd-verify
+      - arn:local:global:skill/sdd-archive
+
+stages:
+  explore:
+    id: sdd-explore
+    agent: orchestrator
+    depends_on: []
+    input:
+      goal: "{user_goal}"
+    description: "Investigate codebase and think through ideas"
+
+  propose:
+    id: sdd-propose
+    agent: orchestrator
+    depends_on: ["sdd-explore"]
+    input:
+      exploration: { from: "sdd-explore" }
+    description: "Create change proposal"
+
+  spec:
+    id: sdd-spec
+    agent: orchestrator
+    depends_on: ["sdd-propose"]
+    input:
+      proposal: { from: "sdd-propose" }
+    description: "Write detailed specifications"
+
+  design:
+    id: sdd-design
+    agent: orchestrator
+    depends_on: ["sdd-propose", "sdd-spec"]
+    input:
+      proposal: { from: "sdd-propose" }
+      spec: { from: "sdd-spec" }
+    description: "Create technical design"
+
+  tasks:
+    id: sdd-tasks
+    agent: orchestrator
+    depends_on: ["sdd-design"]
+    input:
+      design: { from: "sdd-design" }
+    description: "Break down into implementation tasks"
+
+  apply:
+    id: sdd-apply
+    agent: orchestrator
+    depends_on: ["sdd-tasks"]
+    input:
+      tasks: { from: "sdd-tasks" }
+    description: "Implement code changes"
+
+  verify:
+    id: sdd-verify
+    agent: orchestrator
+    depends_on: ["sdd-apply"]
+    input:
+      implementation: { from: "sdd-apply" }
+      spec: { from: "sdd-spec" }
+    description: "Validate implementation against specs"
+
+  archive:
+    id: sdd-archive
+    agent: orchestrator
+    depends_on: ["sdd-verify"]
+    input:
+      verification: { from: "sdd-verify" }
+    description: "Archive completed change"
+
+execution:
+  mode: sequential
+  onFailure: interactive
+  default_workflow: true
+
+metrics:
+  streaming: true
+  interval: 1000

@@ -1,21 +1,20 @@
-/**
- * TopBar — the top application bar.
- * Contains: project selector, workspace context, command palette, notifications, connection status.
- */
-
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CommandPalette } from './CommandPalette';
 import { useProjects } from '@/hooks/useProjects';
+import { useTheme } from '@/hooks/useTheme';
+import { useShellContext } from './StudioShell';
 
 export function TopBar() {
   const navigate = useNavigate();
   const params = useParams();
+  const { resolved, setTheme } = useTheme();
+  const { toggleSidebar, setMobileMenuOpen, mobileMenuOpen } = useShellContext();
   const [commandOpen, setCommandOpen] = useState(false);
-  const [workspaceFilter, setWorkspaceFilter] = useState<string>('all');
   const { projects } = useProjects();
 
-  // Global keyboard shortcut: Ctrl+K / Cmd+K opens command palette
+  const currentProject = params.projectId ?? null;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -27,79 +26,117 @@ export function TopBar() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const currentProject = params.projectId ?? null;
-
   return (
     <>
-      <header className="flex h-14 items-center gap-4 border-b border-border-subtle bg-bg-surface px-4 flex-shrink-0">
-        {/* Left: Logo / Studio name */}
+      <header className="app-shell__topbar" role="banner">
+        <button
+          className="mobile-menu-button"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+        >
+          {mobileMenuOpen ? '✕' : '☰'}
+        </button>
+
+        <button
+          className="sidebar-toggle"
+          onClick={toggleSidebar}
+          aria-label="Toggle sidebar"
+        >
+          ☰
+        </button>
+
         <button
           onClick={() => navigate('/studio')}
-          className="flex items-center gap-2 text-sm font-semibold text-text-primary hover:text-accent transition-colors"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '15px',
+            fontWeight: 600,
+            color: 'var(--color-primary)',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            whiteSpace: 'nowrap',
+          }}
         >
-          <span className="text-lg">⬡</span>
+          <span style={{ fontSize: '20px' }}>⬡</span>
           <span>Studio</span>
         </button>
 
-        {/* Project selector */}
-        <div className="flex items-center gap-1">
-          <span className="text-text-muted">/</span>
-          <select
-            value={currentProject ?? ''}
-            onChange={(e) => navigate(`/studio/projects/${e.target.value}`)}
-            className="text-sm bg-transparent border-none text-text-primary hover:text-accent cursor-pointer outline-none"
-          >
-            <option value="">Select project</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Workspace context filter */}
         {currentProject && (
-          <div className="flex items-center gap-2 ml-2">
-            <span className="text-xs text-text-muted">Workspace:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', color: 'var(--color-on-surface)' }}>
+            <span style={{ opacity: 0.4 }}>/</span>
             <select
-              value={workspaceFilter}
-              onChange={(e) => setWorkspaceFilter(e.target.value)}
-              className="text-xs bg-bg-elevated border border-border-subtle rounded px-2 py-1 text-text-secondary cursor-pointer outline-none"
+              value={currentProject}
+              onChange={(e) => navigate(`/studio/projects/${e.target.value}`)}
+              aria-label="Select project"
+              style={{
+                fontSize: '14px',
+                fontWeight: 500,
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--color-on-surface)',
+                cursor: 'pointer',
+                outline: 'none',
+                padding: '2px 4px',
+                borderRadius: 'var(--radius-md)',
+              }}
             >
-              <option value="all">All workspaces</option>
-              <option value="dev">dev</option>
-              <option value="staging">staging</option>
-              <option value="prod">prod</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
             </select>
           </div>
         )}
 
-        {/* Spacer */}
-        <div className="flex-1" />
+        <div style={{ flex: 1 }} />
 
-        {/* Command palette trigger */}
         <button
+          className="topbar-search"
           onClick={() => setCommandOpen(true)}
-          className="flex items-center gap-2 text-xs text-text-muted border border-border-subtle rounded px-3 py-1.5 hover:border-border-default hover:text-text-secondary transition-colors"
+          aria-label="Open search"
         >
-          <span>Search...</span>
-          <kbd className="text-[10px] bg-bg-elevated border border-border-subtle rounded px-1">⌘K</kbd>
+          <span style={{ opacity: 0.5 }}>Search...</span>
+          <kbd>⌘K</kbd>
         </button>
 
-        {/* Notifications */}
-        <button className="relative text-text-muted hover:text-text-primary transition-colors">
-          <span className="text-lg">🔔</span>
-          {/* Notification badge */}
-          <span className="absolute top-0 right-0 w-2 h-2 bg-accent-error rounded-full" />
+        <button
+          className="icon-button"
+          aria-label="Notifications"
+          style={{ position: 'relative' }}
+        >
+          <span aria-hidden="true">🔔</span>
+          <span
+            style={{
+              position: 'absolute',
+              top: '6px',
+              right: '6px',
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              background: 'var(--color-error)',
+            }}
+          />
         </button>
 
-        {/* Connection status */}
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-accent-success" />
-          <span className="text-xs text-text-muted">Connected</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span className="connection-dot connection-dot--connected" aria-label="Connected" />
+          <span style={{ fontSize: '12px', color: 'var(--color-on-surface)', opacity: 0.6 }}>
+            Connected
+          </span>
         </div>
+
+        <button
+          className="icon-button"
+          onClick={() => setTheme(resolved === 'dark' ? 'light' : 'dark')}
+          aria-label={resolved === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+        >
+          <span aria-hidden="true">{resolved === 'dark' ? '☀' : '☾'}</span>
+        </button>
       </header>
 
-      {/* Command palette modal */}
       {commandOpen && <CommandPalette onClose={() => setCommandOpen(false)} />}
     </>
   );

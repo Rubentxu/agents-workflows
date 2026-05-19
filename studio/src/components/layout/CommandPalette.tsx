@@ -1,13 +1,3 @@
-/**
- * CommandPalette — global search and quick actions modal.
- * Trigger: Ctrl+K / Cmd+K
- *
- * Populates:
- * - Static navigation actions
- * - Registry resources (workflows, agents, skills, prompts) fetched on open
- * - Recent items from localStorage
- */
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMcpTools } from '@/hooks/useMcpTools';
@@ -42,6 +32,33 @@ const KIND_ICON: Record<string, string> = {
   workflow: '🔵', agent: '🟣', skill: '🟢', prompt: '🔵', tool: '🟠', template: '🔷',
 };
 
+const itemStyle = (selected: boolean): React.CSSProperties => ({
+  width: '100%',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '12px',
+  padding: '8px 16px',
+  textAlign: 'left',
+  border: 'none',
+  cursor: 'pointer',
+  transition: `background var(--motion-fast)`,
+  background: selected ? 'var(--color-primary-container)' : 'transparent',
+  color: selected ? 'var(--color-on-primary-container)' : 'var(--color-on-surface)',
+  fontSize: '14px',
+  fontWeight: selected ? 600 : 400,
+});
+
+const categoryBadgeStyle: React.CSSProperties = {
+  fontSize: '10px',
+  padding: '1px 6px',
+  borderRadius: '4px',
+  border: '1px solid var(--color-outline-variant)',
+  background: 'var(--color-surface-container)',
+  color: 'var(--color-on-surface)',
+  textTransform: 'capitalize',
+  lineHeight: 1.4,
+};
+
 export function CommandPalette({ onClose }: CommandPaletteProps) {
   const navigate = useNavigate();
   const { listWorkflows, listAgents, listSkills, listPrompts, loading } = useMcpTools();
@@ -50,7 +67,6 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
   const [resources, setResources] = useState<RegistryNode[]>([]);
   const fetched = useRef(false);
 
-  // Fetch all registry resources on mount
   useEffect(() => {
     if (fetched.current) return;
     fetched.current = true;
@@ -96,7 +112,6 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
     [navigate, onClose]
   );
 
-  // Keyboard navigation
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown') {
@@ -115,31 +130,50 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
     return () => window.removeEventListener('keydown', handleKey);
   }, [filtered, selectedIndex, handleSelect, onClose]);
 
-  const categoryColor = (cat: CommandItem['category']) => {
-    switch (cat) {
-      case 'navigation': return 'border-blue-400 text-blue-400';
-      case 'action': return 'border-accent text-accent';
-      case 'workflow': return 'border-blue-400/50 text-blue-400/80';
-      case 'agent': return 'border-purple-400/50 text-purple-400/80';
-      case 'skill': return 'border-green-400/50 text-green-400/80';
-      case 'prompt': return 'border-cyan-400/50 text-cyan-400/80';
-      default: return 'border-text-muted/50 text-text-muted/80';
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-24" onClick={onClose}>
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40" />
-
-      {/* Modal */}
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 50,
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        paddingTop: '96px',
+      }}
+      onClick={onClose}
+    >
       <div
-        className="relative w-full max-w-lg bg-bg-surface border border-border-default rounded-lg shadow-2xl overflow-hidden"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'var(--color-scrim)',
+        }}
+      />
+
+      <div
+        style={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: '512px',
+          background: 'var(--color-surface)',
+          border: '1px solid var(--color-outline-variant)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--elevation-3)',
+          overflow: 'hidden',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Search input */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border-subtle">
-          <span className="text-text-muted">🔍</span>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '12px 16px',
+            borderBottom: '1px solid var(--color-outline-variant)',
+          }}
+        >
+          <span style={{ opacity: 0.5 }}>🔍</span>
           <input
             autoFocus
             value={query}
@@ -148,16 +182,47 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
               setSelectedIndex(0);
             }}
             placeholder="Search projects, workflows, executions..."
-            className="flex-1 text-sm bg-transparent text-text-primary placeholder-text-muted outline-none"
+            style={{
+              flex: 1,
+              fontSize: '14px',
+              background: 'transparent',
+              color: 'var(--color-on-surface)',
+              border: 'none',
+              outline: 'none',
+            }}
           />
-          {loading && <span className="text-xs text-text-muted animate-pulse">Loading...</span>}
-          <kbd className="text-[10px] text-text-muted bg-bg-elevated border border-border-subtle rounded px-1">ESC</kbd>
+          {loading && (
+            <span style={{ fontSize: '12px', color: 'var(--color-on-surface)', opacity: 0.5 }}>
+              Loading...
+            </span>
+          )}
+          <kbd
+            style={{
+              fontSize: '10px',
+              padding: '1px 6px',
+              borderRadius: '4px',
+              background: 'var(--color-surface-container-high)',
+              border: '1px solid var(--color-outline-variant)',
+              fontFamily: 'inherit',
+              color: 'var(--color-on-surface)',
+              opacity: 0.6,
+            }}
+          >
+            ESC
+          </kbd>
         </div>
 
-        {/* Results */}
-        <div className="max-h-80 overflow-y-auto py-2">
+        <div style={{ maxHeight: '320px', overflowY: 'auto', padding: '8px 0' }}>
           {filtered.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-text-muted">
+            <div
+              style={{
+                padding: '32px 16px',
+                textAlign: 'center',
+                fontSize: '14px',
+                color: 'var(--color-on-surface)',
+                opacity: 0.5,
+              }}
+            >
               {query ? `No results for "${query}"` : 'Start typing to search...'}
             </div>
           ) : (
@@ -165,29 +230,46 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
               <button
                 key={item.id}
                 onClick={() => handleSelect(item)}
-                className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors ${
-                  index === selectedIndex ? 'bg-accent/10 text-accent' : 'text-text-primary hover:bg-bg-elevated'
-                }`}
+                style={itemStyle(index === selectedIndex)}
               >
-                <span className="text-sm">{KIND_ICON[item.category] ?? '📄'}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{item.label}</div>
+                <span style={{ fontSize: '14px' }}>{KIND_ICON[item.category] ?? '📄'}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '14px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {item.label}
+                  </div>
                   {item.description && (
-                    <div className="text-xs text-text-muted truncate">{item.description}</div>
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        color: 'var(--color-on-surface)',
+                        opacity: 0.55,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {item.description}
+                    </div>
                   )}
                 </div>
-                {item.path && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded border capitalize ${categoryColor(item.category)}`}>
-                    {item.category}
-                  </span>
-                )}
+                {item.path && <span style={categoryBadgeStyle}>{item.category}</span>}
               </button>
             ))
           )}
         </div>
 
-        {/* Footer hint */}
-        <div className="flex items-center gap-4 px-4 py-2 border-t border-border-subtle text-xs text-text-muted">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+            padding: '8px 16px',
+            borderTop: '1px solid var(--color-outline-variant)',
+            fontSize: '12px',
+            color: 'var(--color-on-surface)',
+            opacity: 0.45,
+          }}
+        >
           <span>↑↓ navigate</span>
           <span>↵ select</span>
           <span>esc close</span>

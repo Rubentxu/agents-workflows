@@ -1,0 +1,22 @@
+arn: arn:local:global:tool/delegate
+name: delegate
+description: "Delegate a task to an agent that runs in background"
+source: "builtin://delegate"
+source_type: "builtin"
+category: "mcp"
+input_schema:
+  type: object
+  properties:
+    prompt:
+      type: string
+      description: "Full detailed prompt for the agent"
+    agent:
+      type: string
+      description: "Agent to delegate to (explore, researcher, scribe, general)"
+  required:
+    - prompt
+    - agent
+tags:
+  - "agent"
+  - "background"
+  - "mcp"

@@ -27,7 +27,7 @@
  * ```
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { RegistryNode } from '@/types';
 import { useResourceApi } from '@/hooks/useResourceApi';
@@ -48,6 +48,12 @@ export interface ResourceCatalogProps {
   deletable?: boolean;
   /** Custom icon character extractor */
   iconExtractor?: (node: RegistryNode) => string;
+  /** Optional explanatory note for partially implemented catalogs */
+  implementationNote?: string;
+  /** Optional custom empty-state title */
+  emptyStateTitle?: string;
+  /** Optional custom empty-state description */
+  emptyStateDescription?: string;
 }
 
 interface LocalResource {
@@ -55,6 +61,10 @@ interface LocalResource {
   name: string;
   namespace: string;
   [key: string]: unknown;
+}
+
+function toTestId(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 const COLOR_MAP: Record<string, { bg: string; text: string; border: string }> = {
@@ -75,9 +85,13 @@ export function ResourceCatalogPage({
   projectId,
   deletable = false,
   iconExtractor,
+  implementationNote,
+  emptyStateTitle,
+  emptyStateDescription,
 }: ResourceCatalogProps) {
   const navigate = useNavigate();
   const { getImpact } = useImpactReview();
+  const resourceKey = resourceType.toLowerCase();
 
   const colors = COLOR_MAP[accentColor] ?? COLOR_MAP.green;
 
@@ -111,6 +125,10 @@ export function ResourceCatalogPage({
 
   const { deleteResource } = useResourceApi();
 
+  useEffect(() => {
+    void fetchResources();
+  }, [fetchResources]);
+
   const handleDeleteClick = useCallback(
     async (resource: LocalResource, e: React.MouseEvent) => {
       e.stopPropagation();
@@ -134,7 +152,7 @@ export function ResourceCatalogPage({
   }, [pendingDelete, deleteResource]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" data-testid={`${resourceKey}-catalog-page`}>
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant">
         <div>
@@ -147,12 +165,14 @@ export function ResourceCatalogPage({
           <button
             onClick={fetchResources}
             disabled={loading}
+            data-testid={`${resourceKey}-catalog-refresh`}
             className="px-3 py-1.5 text-xs border border-outline rounded hover:bg-surface-container text-secondary transition-colors"
           >
             {loading ? '...' : 'Refresh'}
           </button>
           <button
             onClick={() => navigate(createPath)}
+            data-testid={`${resourceKey}-catalog-create`}
             className="px-4 py-2 bg-primary text-on-primary text-sm font-medium rounded hover:bg-primary/90 transition-colors"
           >
             New {resourceLabel.slice(0, -1)}
@@ -162,9 +182,15 @@ export function ResourceCatalogPage({
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
+        {implementationNote && (
+          <div className="mb-4 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-secondary">
+            {implementationNote}
+          </div>
+        )}
+
         {error && (
           <div className="mb-4">
-            <ErrorState title="Failed to load resources" message={error} onRetry={fetchResources} />
+            <ErrorState title="Failed to load resources" message={error} onRetry={fetchResources} testId={`${resourceKey}-catalog-error-state`} />
           </div>
         )}
 
@@ -172,17 +198,19 @@ export function ResourceCatalogPage({
           <LoadingState type="rows" count={3} />
         ) : resources.length === 0 ? (
           <EmptyState
-            icon={<span className="text-lg">📦</span>}
-            title={`No ${resourceLabel.toLowerCase()} found`}
-            description={`Create your first ${resourceLabel.slice(0, -1).toLowerCase()} to get started.`}
-            action={{ label: `Create ${resourceLabel.slice(0, -1)}`, onClick: () => navigate(createPath) }}
-          />
+            icon={<span aria-hidden="true" className="text-lg">◫</span>}
+              title={emptyStateTitle ?? `No ${resourceLabel.toLowerCase()} found`}
+              description={emptyStateDescription ?? `Create your first ${resourceLabel.slice(0, -1).toLowerCase()} to get started.`}
+              action={{ label: `Create ${resourceLabel.slice(0, -1)}`, onClick: () => navigate(createPath) }}
+              testId={`${resourceKey}-catalog-empty-state`}
+            />
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2" data-testid={`${resourceKey}-catalog-list`}>
             {resources.map((resource) => (
               <div
                 key={resource.id}
                 onClick={() => navigate(editorPath(resource.id))}
+                data-testid={`${resourceKey}-catalog-row-${toTestId(resource.name)}`}
                 className="flex items-center gap-4 px-4 py-3 bg-surface border border-outline-variant rounded-lg hover:border-primary/50 cursor-pointer group transition-all"
               >
                 {/* Icon */}
@@ -205,6 +233,7 @@ export function ResourceCatalogPage({
                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={(e) => handleDeleteClick(resource, e)}
+                      data-testid={`${resourceKey}-catalog-delete-${toTestId(resource.name)}`}
                       className="px-2 py-1 text-xs text-error hover:text-error/80 hover:bg-error/10 rounded transition-colors border border-transparent hover:border-error/30"
                     >
                       Delete

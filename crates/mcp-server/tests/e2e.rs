@@ -390,8 +390,8 @@ async fn test_02_workflow_tools() {
     assert!(!is_error(&resp), "workflow_execute failed");
     let exec = parse_tool_result(&resp["result"]);
     let exec_arn = exec["arn"].as_str().unwrap();
-    assert_eq!(exec["status"], "pending");
-    println!("  ✓ workflow_execute -> {}", exec_arn);
+    assert_eq!(exec["status"], "running");
+    println!("  ✓ workflow_execute -> {} (status: running)", exec_arn);
 
     // workflow_get_state
     let resp = client.workflow_get_state(exec_arn).await;

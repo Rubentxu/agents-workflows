@@ -42,7 +42,7 @@ fn create_test_router() -> (Router, TempDir) {
     let analytics_service = std::sync::Arc::new(AnalyticsService::new());
     let sse_emitter = std::sync::Arc::new(SseEmitter::new());
     let metrics_aggregator = std::sync::Arc::new(MetricsAggregator::new());
-    let app_state = std::sync::Arc::new(AppState { node_service, db, execution_store, artifact_store, artifact_service, analytics_service, sse_emitter, metrics_aggregator });
+    let app_state = std::sync::Arc::new(AppState { node_service, db, execution_store, artifact_store, artifact_service, analytics_service, sse_emitter, metrics_aggregator, workspace_root: workspace.clone() });
     let state = RestState::new(app_state);
     (create_rest_router(state), temp_dir)
 }

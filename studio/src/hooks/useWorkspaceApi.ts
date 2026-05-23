@@ -4,8 +4,9 @@
  */
 
 import { useCallback, useState } from 'react';
+import { restApiUrl } from '@/lib/apiBase';
 
-const API = '/api';
+const API = restApiUrl('');
 
 export interface Workspace {
   id: string;

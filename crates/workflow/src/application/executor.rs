@@ -542,6 +542,7 @@ impl StageContext for ExecutionContext {
 mod tests {
     use super::*;
     use crate::domain::Stage;
+    use crate::AgentDefinition;
 
     fn create_test_workflow() -> Workflow {
         let mut workflow = Workflow::new(

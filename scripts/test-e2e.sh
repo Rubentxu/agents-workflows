@@ -11,7 +11,7 @@ sleep 3
 
 # Check server is running
 echo "Checking server health..."
-curl -s http://localhost:8080/health | grep -q "healthy" || { echo "Server not healthy"; kill $SERVER_PID; exit 1; }
+curl -s http://localhost:8081/api/health | grep -q "healthy" || { echo "Server not healthy"; kill $SERVER_PID; exit 1; }
 
 # Test MCP
 echo "Testing MCP workflow_list..."
@@ -22,7 +22,7 @@ curl -s -X POST http://localhost:8080/mcp \
 
 # Test REST
 echo "Testing REST health..."
-curl -s http://localhost:8081/health | grep -q "healthy" || { echo "REST not healthy"; kill $SERVER_PID; exit 1; }
+curl -s http://localhost:8081/api/health | grep -q "healthy" || { echo "REST not healthy"; kill $SERVER_PID; exit 1; }
 
 # Test Studio
 echo "Testing Studio UI..."

@@ -1,0 +1,21 @@
+arn: arn:local:global:tool/glob
+name: glob
+description: "Fast file pattern matching tool supporting glob patterns"
+source: "builtin://glob"
+source_type: "builtin"
+category: "search"
+input_schema:
+  type: object
+  properties:
+    pattern:
+      type: string
+      description: "Glob pattern to match files against"
+    path:
+      type: string
+      description: "Directory to search in"
+  required:
+    - pattern
+tags:
+  - "file"
+  - "search"
+  - "pattern"

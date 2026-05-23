@@ -84,23 +84,33 @@ A structured log event capturing inputs, outputs, and metadata for each stage of
 │                                                                      │
 │  ┌────────────────────────────────────────────────────────────────┐ │
 │  │  Axum Server                                                    │ │
-│  │  ├── /studio/*   → React UI (embedded)                          │ │
-│  │  ├── /api/*     → REST API (Studio CRUD)                       │ │
+│  │  ├── /studio/*   → React UI (Monaco editors per resource type) │ │
+│  │  ├── /api/*     → REST API (file read/write + SQLite index)    │ │
+│  │  ├── /schemas/* → JSON Schema endpoint (schemars-generated)    │ │
 │  │  ├── /mcp/*    → MCP HTTP Stream (IDE integration)             │ │
 │  │  └── /metrics/sse → SSE (real-time metrics)                    │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 │                                                                      │
 │  ~/.workflows/                                                       │
-│  ├── global/                    # Shared resources                   │
-│  │   ├── registry.db            # SQLite, source of truth            │
-│  │   ├── workflows/            # arn:local:global:workflow/*        │
-│  │   ├── agents/              # arn:local:global:agent/*          │
-│  │   ├── skills/              # arn:local:global:skill/*          │
-│  │   └── prompts/             # arn:local:global:prompt/*          │
+│  ├── global/                    # Shared across all workspaces       │
+│  │   ├── registry.db            # SQLite CACHE (files = truth)      │
+│  │   ├── agents/*.yaml          # arn:local:global:agent/*          │
+│  │   ├── skills/*/SKILL.md      # arn:local:global:skill/*         │
+│  │   ├── prompts/*.md           # arn:local:global:prompt/*         │
+│  │   ├── templates/*.md|json    # arn:local:global:template/*       │
+│  │   ├── tools/*.yaml           # arn:local:global:tool/*           │
+│  │   └── workflows/*.yaml       # arn:local:global:workflow/*      │
 │  │                                                                  │
-│  └── workspaces/              # Isolated resources                   │
+│  └── workspaces/               # All resource types supported       │
 │      └── {workspace-id}/                                            │
-│          └── artifacts/       # arn:local:workspace/{id}:artifact/* │
+│          ├── registry.db       # Workspace-scoped SQLite cache      │
+│          ├── agents/           # Workspace-local agents/overrides   │
+│          ├── skills/           # Workspace-local skills             │
+│          ├── prompts/          # Workspace-local prompts            │
+│          ├── templates/        # Workspace-local templates          │
+│          ├── tools/            # Workspace-local tools              │
+│          ├── workflows/        # Workspace-local workflows          │
+│          └── artifacts/        # arn:local:workspace/{id}:artifact/*│
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -200,6 +210,24 @@ arn:local:workspace/abc123:execution/run-001
 9. **Adapter pattern for persistence** — `ExecutionRepository` port in domain, `ExecutionRepositoryAdapter` bridges to `ExecutionStore`; `ArtifactStore` encapsulates artifact SQL; AppState is raw-SQL-free
 10. **Shared YAML parser** — `parse_registry_workflow_yaml` in domain layer used by both MCP and REST handlers; no inline YAML parsing in handlers
 11. **Storage seams eliminate raw SQL** — REST handlers for execution and artifact go through `ExecutionStore`/`ArtifactStore`, not raw SQL; 8 raw SQL remain (workspace CRUD 4, insights 1, alerts 3) — these use `state.db()` directly
+12. **Agent data model aligns with opencode AgentConfig** — Agent YAML is a superset of opencode's `AgentConfig` schema; fields: `model` (provider/model format), `prompt` (ARN reference, not file path), `temperature`, `top_p`, `steps`, `mode`, `hidden`, `color`, `permission` (granular with glob patterns), `tools` (Record<string,boolean>), `options`, `variant`; extensions: `arn`, `scope`, `skills` (ARN references) — ADR-0010
+13. **ARN references for all cross-resource dependencies** — Agents reference prompts via ARN (`arn:local:global:prompt/name`), not via `{file:...}` syntax; `{file:...}` only for resources that manage file content directly — ADR-0015
+14. **File-referenced content model** — Large text content (skills, prompts, templates) lives in separate files referenced by `content_path`, not inline in YAML; variables inferred from `{{variable}}` patterns in content, never manually declared — ADR-0011, ADR-0012, ADR-0013
+15. **Skill declares required_tools** — Skills list tool names they need; agents binding a skill must auto-merge those tools into their `tools` map — ADR-0011
+16. **Templates are native-format files** — A template for markdown IS a markdown file, for JSON IS a JSON file; no meta-descriptions of format — ADR-0013
+17. **Prompt-as-function** — Prompts have typed inputs (inferred from content) and optional output format via Template ARN reference; classification by `kind`: system, user, template — ADR-0012
+18. **Tools dual-source model** — Tools come from MCP servers (catalog), built-in opencode tools, or custom implementations; all registered with ARN, input_schema, category, tags — ADR-0014
+19. **Registry edges reflect ARN references** — On save, edges are created for every ARN reference (uses, references, requires); on delete, edges are cleaned; orphan detection available — ADR-0015
+20. **Files as source of truth, SQLite as cache** — Filesystem YAML/MD files are the source of truth; SQLite databases are caches/indices rebuilt from files; follows Kubernetes pattern (YAML → etcd cache) — ADR-0006
+21. **Workspace scope supports ALL resource types** — Workspaces can contain agents, skills, prompts, tools, templates, workflows (not just artifacts/executions); each workspace has its own `registry.db` and directory tree; application accesses both global and active workspace — ADR-0006
+22. **Professional Monaco editors per resource type** — Studio uses Monaco Editor (not HTML forms) as the primary editing experience; each resource type has a dedicated editor matching its native format: YAML editor (agents, tools, workflows), Markdown editor with YAML frontmatter (skills, prompts), format-adaptive editor (templates) — like Lens, OpenShift, GitHub Actions
+23. **Schema validation via monaco-yaml + schemars** — Rust domain types generate JSON Schema via `schemars`; schemas served via REST endpoint (`/schemas/{resource_type}`); Monaco uses `monaco-yaml` (backed by `yaml-language-server`) for validation, autocomplete, hover docs; frontmatter validation for markdown resources
+24. **One workspace per project (current), multi-workspace (future)** — Current: each project has one workspace; future: projects may have multiple workspaces; application resolves global + active workspace resources
+25. **4-layer validation pipeline** — Client-side (Monaco + monaco-yaml), Schema validation (Rust serde + schemars), Cross-reference linter (ARN resolution), Semantic linters (domain rules) — ADR-0016
+26. **Generic content endpoint** — `GET/PUT /api/content/:arn` serves raw file content for all resource types; `POST /api/validate/:arn` returns structured diagnostics — ADR-0016
+27. **Schema pipeline from Rust types** — `#[derive(JsonSchema)]` on domain structs generates JSON Schema; served via `GET /api/schemas/:type`; consumed by `monaco-yaml` for autocomplete and validation; schemas never desync from code — ADR-0016
+28. **Frontmatter split for MD resources** — Skill, Prompt, Template use two coordinated Monaco instances (YAML header + Markdown body) that visually appear as one panel — ADR-0016
+29. **Workflow dual editor** — React Flow visual DAG + Monaco YAML code editor with bidirectional sync, like GitHub Actions — ADR-0016
 
 ## Flagged Ambiguities
 
@@ -209,3 +237,6 @@ arn:local:workspace/abc123:execution/run-001
 - "artifact" vs "output" — resolved: artifact is the stored entity, output is the stage result
 - "run" vs "execute" — resolved: only agents decide which workflows to run and execute stages; Studio visualizes information maintained through MCP and Insights
 - "execution" — resolved: use **Agent Execution** for executions reported by agents; avoid wording that implies Studio starts them
+- "SQLite as source of truth" — **OVERTURNED**: files are now the source of truth; SQLite is a cache/index; follows Kubernetes pattern — ADR-0006 updated
+- "workspace = only artifacts/executions" — **OVERTURNED**: workspace scope now supports ALL resource types (agents, skills, prompts, tools, templates, workflows); workspace overrides of global resources are supported — ADR-0006 updated
+- "form-based editors" — **OVERTURNED**: Studio uses Monaco Editor with dedicated editors per resource type, not HTML forms; YAML for agents/tools/workflows, Markdown+frontmatter for skills/prompts, format-adaptive for templates

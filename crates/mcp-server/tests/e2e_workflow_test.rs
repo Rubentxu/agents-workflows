@@ -41,7 +41,7 @@ fn create_test_rest_state_with_bootstrap(temp_dir: &TempDir) -> (RestState, Temp
     let node_service = Arc::new(NodeService::new(repository));
 
     // Register workflows to DB (only workflows are auto-registered)
-    bootstrap.register_workflows_to_db(node_service.clone()).expect("Failed to register workflows");
+    bootstrap.register_resources_to_db(node_service.clone()).expect("Failed to register workflows");
 
     let execution_store = Arc::new(ExecutionStore::new(db.clone()));
     let artifact_store = Arc::new(mcp_server::artifact_store::ArtifactStore::new(db.clone()));
@@ -51,7 +51,7 @@ fn create_test_rest_state_with_bootstrap(temp_dir: &TempDir) -> (RestState, Temp
     let analytics_service = Arc::new(AnalyticsService::new());
     let sse_emitter = Arc::new(SseEmitter::new());
     let metrics_aggregator = Arc::new(MetricsAggregator::new());
-    let app_state = Arc::new(AppState { node_service, db, execution_store, artifact_store, artifact_service, analytics_service, sse_emitter, metrics_aggregator });
+    let app_state = Arc::new(AppState { node_service, db, execution_store, artifact_store, artifact_service, analytics_service, sse_emitter, metrics_aggregator, workspace_root: workspace.clone() });
     let state = RestState::new(app_state);
     (state, TempDir::new().expect("Failed to create temp dir for artifacts"))
 }

@@ -89,17 +89,328 @@ test.describe('REST API - Resources', () => {
   });
 });
 
+test.describe('REST API - Workflow CRUD', () => {
+  let createdWorkflowArn: string;
+
+  test('POST /api/workflows creates a workflow', async () => {
+    const body = await fetchJSON<{ arn: string; name: string }>(`${REST_URL}/api/workflows`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'test-workflow',
+        scope: 'project/test',
+        stages: [],
+        execution: { mode: 'sequential' }
+      })
+    });
+    expect(body).toHaveProperty('arn');
+    expect(body.arn).toContain('workflow/test-workflow');
+    createdWorkflowArn = body.arn;
+    console.log('Created workflow:', body.arn);
+  });
+
+  test('PUT /api/workflows/{arn} updates a workflow', async () => {
+    const body = await fetchJSON<{ arn: string; name: string }>(`${REST_URL}/api/workflows`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'update-test-workflow',
+        scope: 'project/test',
+        stages: [],
+        execution: { mode: 'sequential' }
+      })
+    });
+    expect(body).toHaveProperty('arn');
+    const arn = body.arn;
+
+    const updateBody = await fetchJSON<{ arn: string; name: string }>(`${REST_URL}/api/workflows/${encodeURIComponent(arn)}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        description: 'updated description'
+      })
+    });
+    expect(updateBody).toHaveProperty('arn', arn);
+  });
+
+  test('DELETE /api/workflows/{arn} deletes a workflow', async () => {
+    const body = await fetchJSON<{ arn: string }>(`${REST_URL}/api/workflows`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'delete-test-workflow',
+        scope: 'project/test',
+        stages: [],
+        execution: { mode: 'sequential' }
+      })
+    });
+    const arn = body.arn;
+
+    const deleteResponse = await fetch(`${REST_URL}/api/workflows/${encodeURIComponent(arn)}`, {
+      method: 'DELETE'
+    });
+    expect(deleteResponse.status).toBeLessThan(400);
+
+    const getResponse = await fetch(`${REST_URL}/api/workflows/${encodeURIComponent(arn)}`);
+    expect(getResponse.status).toBe(404);
+  });
+});
+
+test.describe('REST API - Workspace CRUD', () => {
+  let createdWorkspaceId: string;
+
+  test('POST /api/workspaces creates a workspace', async () => {
+    const body = await fetchJSON<{ id: string; name: string }>(`${REST_URL}/api/workspaces`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'test-workspace',
+        project_id: 'test'
+      })
+    });
+    expect(body).toHaveProperty('id');
+    createdWorkspaceId = body.id;
+    console.log('Created workspace:', body.id);
+  });
+
+  test('GET /api/workspaces/{id} returns workspace', async () => {
+    const body = await fetchJSON<{ id: string; name: string }>(`${REST_URL}/api/workspaces`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'get-test-workspace',
+        project_id: 'test'
+      })
+    });
+    const id = body.id;
+
+    const getBody = await fetchJSON<{ id: string; name: string }>(`${REST_URL}/api/workspaces/${id}`);
+    expect(getBody).toHaveProperty('id', id);
+  });
+
+  test('DELETE /api/workspaces/{id} deletes workspace', async () => {
+    const body = await fetchJSON<{ id: string }>(`${REST_URL}/api/workspaces`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'delete-test-workspace',
+        project_id: 'test'
+      })
+    });
+    const id = body.id;
+
+    const deleteResponse = await fetch(`${REST_URL}/api/workspaces/${id}`, {
+      method: 'DELETE'
+    });
+    expect(deleteResponse.status).toBeLessThan(400);
+
+    const getResponse = await fetch(`${REST_URL}/api/workspaces/${id}`);
+    expect(getResponse.status).toBe(404);
+  });
+});
+
+test.describe('REST API - Agent CRUD', () => {
+  let createdAgentArn: string;
+
+  test('POST /api/agents creates an agent', async () => {
+    const body = await fetchJSON<{ arn: string; name: string }>(`${REST_URL}/api/agents`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'test-agent',
+        scope: 'global',
+        description: 'Test agent for CRUD',
+        model: 'claude-3-5-sonnet',
+        skills: [],
+        tools: []
+      })
+    });
+    expect(body).toHaveProperty('arn');
+    createdAgentArn = body.arn;
+    console.log('Created agent:', body.arn);
+  });
+
+  test('PUT /api/agents/{arn} updates an agent', async () => {
+    const body = await fetchJSON<{ arn: string }>(`${REST_URL}/api/agents`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'update-test-agent',
+        scope: 'global',
+        model: 'claude-3-5-sonnet',
+        skills: [],
+        tools: []
+      })
+    });
+    const arn = body.arn;
+
+    const updateBody = await fetchJSON<{ arn: string }>(`${REST_URL}/api/agents/${encodeURIComponent(arn)}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        description: 'Updated description'
+      })
+    });
+    expect(updateBody).toHaveProperty('arn', arn);
+  });
+
+  test('DELETE /api/agents/{arn} deletes an agent', async () => {
+    const body = await fetchJSON<{ arn: string }>(`${REST_URL}/api/agents`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'delete-test-agent',
+        scope: 'global',
+        model: 'claude-3-5-sonnet',
+        skills: [],
+        tools: []
+      })
+    });
+    const arn = body.arn;
+
+    const deleteResponse = await fetch(`${REST_URL}/api/agents/${encodeURIComponent(arn)}`, {
+      method: 'DELETE'
+    });
+    expect(deleteResponse.status).toBeLessThan(400);
+
+    const getResponse = await fetch(`${REST_URL}/api/agents/${encodeURIComponent(arn)}`);
+    expect(getResponse.status).toBe(404);
+  });
+});
+
+test.describe('REST API - Skill CRUD', () => {
+  let createdSkillArn: string;
+
+  test('POST /api/skills creates a skill', async () => {
+    const body = await fetchJSON<{ arn: string; name: string }>(`${REST_URL}/api/skills`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'test-skill',
+        description: 'Test skill for CRUD',
+        content: '# Test Skill\n\nDescription here',
+        triggers: ['test-trigger'],
+        scope: 'global'
+      })
+    });
+    expect(body).toHaveProperty('arn');
+    createdSkillArn = body.arn;
+    console.log('Created skill:', body.arn);
+  });
+
+  test('PUT /api/skills/{arn} updates a skill', async () => {
+    const body = await fetchJSON<{ arn: string }>(`${REST_URL}/api/skills`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'update-test-skill',
+        description: 'Original description',
+        content: '# Skill Content',
+        triggers: ['trigger1'],
+        scope: 'global'
+      })
+    });
+    const arn = body.arn;
+
+    const updateBody = await fetchJSON<{ arn: string }>(`${REST_URL}/api/skills/${encodeURIComponent(arn)}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        description: 'Updated description'
+      })
+    });
+    expect(updateBody).toHaveProperty('arn', arn);
+  });
+
+  test('DELETE /api/skills/{arn} deletes a skill', async () => {
+    const body = await fetchJSON<{ arn: string }>(`${REST_URL}/api/skills`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'delete-test-skill',
+        description: 'To be deleted',
+        content: '# Skill',
+        triggers: ['trigger'],
+        scope: 'global'
+      })
+    });
+    const arn = body.arn;
+
+    const deleteResponse = await fetch(`${REST_URL}/api/skills/${encodeURIComponent(arn)}`, {
+      method: 'DELETE'
+    });
+    expect(deleteResponse.status).toBeLessThan(400);
+
+    const getResponse = await fetch(`${REST_URL}/api/skills/${encodeURIComponent(arn)}`);
+    expect(getResponse.status).toBe(404);
+  });
+});
+
+test.describe('REST API - Prompt CRUD', () => {
+  let createdPromptArn: string;
+
+  test('POST /api/prompts creates a prompt', async () => {
+    const body = await fetchJSON<{ arn: string; name: string }>(`${REST_URL}/api/prompts`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'test-prompt',
+        description: 'Test prompt for CRUD',
+        content: 'You are a helpful assistant.',
+        scope: 'global'
+      })
+    });
+    expect(body).toHaveProperty('arn');
+    createdPromptArn = body.arn;
+    console.log('Created prompt:', body.arn);
+  });
+
+  test('PUT /api/prompts/{arn} updates a prompt', async () => {
+    const body = await fetchJSON<{ arn: string }>(`${REST_URL}/api/prompts`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'update-test-prompt',
+        description: 'Original description',
+        content: 'Original prompt content',
+        scope: 'global'
+      })
+    });
+    const arn = body.arn;
+
+    const updateBody = await fetchJSON<{ arn: string }>(`${REST_URL}/api/prompts/${encodeURIComponent(arn)}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        description: 'Updated description'
+      })
+    });
+    expect(updateBody).toHaveProperty('arn', arn);
+  });
+
+  test('DELETE /api/prompts/{arn} deletes a prompt', async () => {
+    const body = await fetchJSON<{ arn: string }>(`${REST_URL}/api/prompts`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'delete-test-prompt',
+        description: 'To be deleted',
+        content: 'Prompt to delete',
+        scope: 'global'
+      })
+    });
+    const arn = body.arn;
+
+    const deleteResponse = await fetch(`${REST_URL}/api/prompts/${encodeURIComponent(arn)}`, {
+      method: 'DELETE'
+    });
+    expect(deleteResponse.status).toBeLessThan(400);
+
+    const getResponse = await fetch(`${REST_URL}/api/prompts/${encodeURIComponent(arn)}`);
+    expect(getResponse.status).toBe(404);
+  });
+});
+
 test.describe('REST API - Error Handling', () => {
   test('GET /api/nonexistent returns 404', async () => {
     const response = await fetch(`${REST_URL}/api/nonexistent`);
     expect(response.status).toBe(404);
   });
-  
+
   test('POST /api/nonexistent returns 404', async () => {
     const response = await fetch(`${REST_URL}/api/nonexistent`, {
       method: 'POST',
       body: JSON.stringify({}),
     });
     expect(response.status).toBe(404);
+  });
+
+  test('POST /api/workflows with invalid body returns 400', async () => {
+    const response = await fetch(`${REST_URL}/api/workflows`, {
+      method: 'POST',
+      body: JSON.stringify({ invalid: 'payload' }),
+    });
+    expect(response.status).toBeGreaterThanOrEqual(400);
   });
 });

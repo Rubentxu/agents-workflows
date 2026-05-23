@@ -149,9 +149,14 @@ export function DependenciesPage() {
       </div>
 
       {/* Body */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+        <div className="mx-6 mt-4 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-secondary">
+          Preview graph using mock relationship data.
+        </div>
+
+        <div className="flex-1 flex overflow-hidden mt-4 min-h-[640px]">
         {/* Graph */}
-        <div className="flex-1">
+        <div className="flex-1 min-h-[640px]">
           <ReactFlow
             nodes={rfNodes}
             edges={rfEdges}
@@ -174,7 +179,7 @@ export function DependenciesPage() {
 
         {/* Detail panel */}
         {selectedNode && (
-          <div className="w-72 border-l border-outline-variant bg-surface flex flex-col overflow-hidden">
+          <div className="w-72 border-l border-outline-variant bg-surface flex flex-col overflow-hidden min-h-0">
             <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant">
               <div className="flex items-center gap-2">
                 <div className={`w-2.5 h-2.5 rounded-full`} style={{ background: KIND_COLORS[selectedNode.kind].border }} />
@@ -248,6 +253,7 @@ export function DependenciesPage() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

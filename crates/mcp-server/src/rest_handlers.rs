@@ -13,6 +13,12 @@ use axum::{
 use super::rest_types::*;
 use super::rest::RestState;
 use crate::types::ExecutionListParams;
+use crate::resources::agent;
+use crate::resources::skill;
+use crate::resources::prompt;
+use crate::resources::tool;
+use crate::resources::template;
+use crate::resources::workflow;
 
 // Helper to validate ARN path param
 fn validate_arn(arn: &str) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
@@ -139,96 +145,27 @@ pub async fn delete_workspace(
 }
 
 // ============================================================================
-// Workflow Handlers
+// Workflow Handlers (delegated to resources::workflow)
 // ============================================================================
 
 pub async fn list_workflows(
     State(state): State<RestState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let nodes = state.list_by_type("workflow");
-    let workflows: Vec<_> = nodes.into_iter().map(|n| serde_json::json!({
-        "id": n.id,
-        "name": n.name,
-        "namespace": n.namespace,
-        "scope": n.scope,
-        "checksum": n.checksum,
-        "created_at": n.created_at.to_rfc3339(),
-        "updated_at": n.updated_at.to_rfc3339(),
-    })).collect();
-    Ok(Json(serde_json::json!({ "workflows": workflows })))
+    workflow::list(std::sync::Arc::new(state)).await
 }
 
 pub async fn create_workflow(
     State(state): State<RestState>,
     Json(req): Json<CreateWorkflowRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
-    let arn = format!("arn:local:{}:workflow/{}", req.scope, req.name);
-    let config = serde_json::json!({
-        "apiVersion": "workflows.local/v1",
-        "kind": "Workflow",
-        "version": "1.0",
-        "description": req.description.clone().unwrap_or_default(),
-        "metadata": {
-            "name": req.name,
-            "scope": req.scope,
-            "labels": {},
-            "annotations": {
-                "description": req.description.clone().unwrap_or_default(),
-            },
-        },
-        "spec": {
-            "stages": req.stages,
-            "execution": req.execution,
-        },
-    });
-    let config_yaml = serde_yaml::to_string(&config).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string())))
-    )?;
-    let mut node = registry::domain::Node::new(
-        arn.clone(),
-        registry::domain::NodeType::Workflow,
-        req.name.clone(),
-        req.scope.clone(),
-        format!("{}/workflow", req.scope),
-    );
-    node.config_json = Some(config_yaml);
-    state.save_node(node).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e)))
-    )?;
-    Ok((
-        StatusCode::CREATED,
-        Json(serde_json::json!({
-            "arn": arn,
-            "name": req.name,
-            "scope": req.scope,
-            "created_at": chrono::Utc::now().to_rfc3339()
-        })),
-    ))
+    workflow::create(std::sync::Arc::new(state), req).await
 }
 
 pub async fn get_workflow(
     State(state): State<RestState>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let arn = validate_arn(&arn)?;
-    match state.get_node(&arn) {
-        Some(node) => {
-            Ok(Json(serde_json::json!({
-                "id": node.id,
-                "name": node.name,
-                "namespace": node.namespace,
-                "scope": node.scope,
-                "checksum": node.checksum,
-                "config": node.config_json,
-                "created_at": node.created_at.to_rfc3339(),
-                "updated_at": node.updated_at.to_rfc3339(),
-            })))
-        }
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Workflow '{}' not found", arn))),
-        ))
-    }
+    workflow::get(std::sync::Arc::new(state), &arn).await
 }
 
 pub async fn update_workflow(
@@ -236,158 +173,38 @@ pub async fn update_workflow(
     Path(arn): Path<String>,
     Json(req): Json<UpdateWorkflowRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let arn = validate_arn(&arn)?;
-    let existing = state.get_node(&arn).ok_or_else(||
-        (StatusCode::NOT_FOUND, Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Workflow '{}' not found", arn))))
-    )?;
-    // Re-parse existing config and merge updates
-    // NOTE: config_json stores YAML (per CONTEXT.md), so we must use serde_yaml to parse it.
-    // serde_json::from_str would silently fail on YAML-only syntax (e.g. "yes" vs "true").
-    let mut config: serde_yaml::Value = existing.config_json
-        .as_ref()
-        .and_then(|c| serde_yaml::from_str(c).ok())
-        .unwrap_or_else(|| serde_yaml::Value::Mapping(Default::default()));
-    if let Some(desc) = req.description {
-        // Update description at top-level of the YAML (per sdd-full.yaml template structure)
-        config["description"] = serde_yaml::Value::String(desc);
-    }
-    if let Some(stages) = req.stages {
-        // Convert stages Vec to serde_yaml::Value via JSON round-trip
-        let stages_json = serde_json::to_value(stages).unwrap_or_default();
-        let stages_yaml: serde_yaml::Value = serde_yaml::from_str(
-            &serde_json::to_string(&stages_json).unwrap_or_default()
-        ).unwrap_or_default();
-        config["stages"] = stages_yaml;
-    }
-    if let Some(exec_cfg) = req.execution {
-        let exec_json = serde_json::to_value(exec_cfg).unwrap_or_default();
-        let exec_yaml: serde_yaml::Value = serde_yaml::from_str(
-            &serde_json::to_string(&exec_json).unwrap_or_default()
-        ).unwrap_or_default();
-        config["execution"] = exec_yaml;
-    }
-    let config_yaml = serde_yaml::to_string(&config).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string())))
-    )?;
-    let mut updated = registry::domain::Node::new(
-        arn.clone(),
-        registry::domain::NodeType::Workflow,
-        existing.name.clone(),
-        existing.scope.clone(),
-        existing.namespace.clone(),
-    );
-    updated.config_json = Some(config_yaml);
-    updated.checksum = existing.checksum.clone();
-    updated.created_at = existing.created_at;
-    state.save_node(updated).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e)))
-    )?;
-    Ok(Json(serde_json::json!({ "arn": arn })))
+    workflow::update(std::sync::Arc::new(state), &arn, req).await
 }
 
 pub async fn delete_workflow(
     State(state): State<RestState>,
     Path(arn): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let arn = validate_arn(&arn)?;
-    let deleted = state.delete_node(&arn).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e)))
-    )?;
-    if !deleted {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Workflow '{}' not found", arn))),
-        ));
-    }
-    Ok(StatusCode::NO_CONTENT)
+    workflow::delete(std::sync::Arc::new(state), &arn).await
 }
 
 // ============================================================================
-// Agent Handlers
+// Agent Handlers (delegated to resources::agent)
 // ============================================================================
 
 pub async fn list_agents(
     State(state): State<RestState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let nodes = state.list_by_type("agent");
-    let agents: Vec<_> = nodes.into_iter().map(|n| serde_json::json!({
-        "id": n.id,
-        "name": n.name,
-        "namespace": n.namespace,
-        "scope": n.scope,
-        "created_at": n.created_at.to_rfc3339(),
-    })).collect();
-    Ok(Json(serde_json::json!({ "agents": agents })))
+    agent::list(std::sync::Arc::new(state)).await
 }
 
 pub async fn create_agent(
     State(state): State<RestState>,
     Json(req): Json<CreateAgentRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
-    let arn = format!("arn:local:{}:agent/{}", req.scope, req.name);
-    let config = serde_json::json!({
-        "apiVersion": "agents.local/v1",
-        "kind": "Agent",
-        "metadata": {
-            "name": req.name,
-            "scope": req.scope,
-            "labels": {},
-            "annotations": {},
-        },
-        "spec": {
-            "description": req.description,
-            "model": req.model,
-            "skills": req.skills,
-            "tools": req.tools,
-        },
-    });
-    let config_yaml = serde_yaml::to_string(&config).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string())))
-    )?;
-    let mut node = registry::domain::Node::new(
-        arn.clone(),
-        registry::domain::NodeType::Agent,
-        req.name.clone(),
-        req.scope.clone(),
-        format!("{}/agent", req.scope),
-    );
-    node.config_json = Some(config_yaml);
-    state.save_node(node).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e)))
-    )?;
-    Ok((
-        StatusCode::CREATED,
-        Json(serde_json::json!({
-            "arn": arn,
-            "name": req.name,
-            "scope": req.scope,
-            "created_at": chrono::Utc::now().to_rfc3339()
-        })),
-    ))
+    agent::create(std::sync::Arc::new(state), req).await
 }
 
 pub async fn get_agent(
     State(state): State<RestState>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let arn = validate_arn(&arn)?;
-    match state.get_node(&arn) {
-        Some(node) => {
-            Ok(Json(serde_json::json!({
-                "id": node.id,
-                "name": node.name,
-                "namespace": node.namespace,
-                "scope": node.scope,
-                "config": node.config_json,
-                "created_at": node.created_at.to_rfc3339(),
-                "updated_at": node.updated_at.to_rfc3339(),
-            })))
-        }
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Agent '{}' not found", arn))),
-        )),
-    }
+    agent::get(std::sync::Arc::new(state), &arn).await
 }
 
 pub async fn update_agent(
@@ -395,148 +212,42 @@ pub async fn update_agent(
     Path(arn): Path<String>,
     Json(req): Json<UpdateAgentRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let arn = validate_arn(&arn)?;
-    let existing = state.get_node(&arn).ok_or_else(||
-        (StatusCode::NOT_FOUND, Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Agent '{}' not found", arn))))
-    )?;
-    let mut config: serde_yaml::Value = existing.config_json
-        .as_ref()
-        .and_then(|c| serde_yaml::from_str(c).ok())
-        .unwrap_or_else(|| serde_yaml::Value::Mapping(Default::default()));
-    if let Some(desc) = req.description {
-        config["spec"]["description"] = serde_yaml::Value::String(desc);
-    }
-    if let Some(model) = req.model {
-        config["spec"]["model"] = serde_yaml::Value::String(model);
-    }
-    if let Some(skills) = req.skills {
-        let skills_yaml: serde_yaml::Value = serde_yaml::from_str(
-            &serde_json::to_string(&serde_json::json!(skills)).unwrap_or_default()
-        ).unwrap_or_default();
-        config["spec"]["skills"] = skills_yaml;
-    }
-    if let Some(tools) = req.tools {
-        let tools_yaml: serde_yaml::Value = serde_yaml::from_str(
-            &serde_json::to_string(&serde_json::json!(tools)).unwrap_or_default()
-        ).unwrap_or_default();
-        config["spec"]["tools"] = tools_yaml;
-    }
-    let config_yaml = serde_yaml::to_string(&config).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string())))
-    )?;
-    let mut updated = registry::domain::Node::new(
-        arn.clone(),
-        registry::domain::NodeType::Agent,
-        existing.name.clone(),
-        existing.scope.clone(),
-        existing.namespace.clone(),
-    );
-    updated.config_json = Some(config_yaml);
-    updated.checksum = existing.checksum.clone();
-    updated.created_at = existing.created_at;
-    state.save_node(updated).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e)))
-    )?;
-    Ok(Json(serde_json::json!({ "arn": arn })))
+    agent::update(std::sync::Arc::new(state), &arn, req).await
 }
 
 pub async fn delete_agent(
     State(state): State<RestState>,
     Path(arn): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let deleted = state.delete_node(&arn).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e)))
-    )?;
-    if !deleted {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Agent '{}' not found", arn))),
-        ));
-    }
-    Ok(StatusCode::NO_CONTENT)
+    agent::delete(std::sync::Arc::new(state), &arn).await
 }
 
 // ============================================================================
 // Skill Handlers
 // ============================================================================
 
+// ============================================================================
+// Skill Handlers (delegated to resources::skill)
+// ============================================================================
+
 pub async fn list_skills(
     State(state): State<RestState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let nodes = state.list_by_type("skill");
-    let skills: Vec<_> = nodes.into_iter().map(|n| serde_json::json!({
-        "id": n.id,
-        "name": n.name,
-        "namespace": n.namespace,
-        "scope": n.scope,
-        "created_at": n.created_at.to_rfc3339(),
-    })).collect();
-    Ok(Json(serde_json::json!({ "skills": skills })))
+    skill::list(std::sync::Arc::new(state)).await
 }
 
- pub async fn create_skill(
+pub async fn create_skill(
     State(state): State<RestState>,
     Json(req): Json<CreateSkillRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
-    let scope = &req.scope;
-    let arn = format!("arn:local:{}:skill/{}", scope, req.name);
-    let config = serde_json::json!({
-        "apiVersion": "skills.local/v1",
-        "kind": "Skill",
-        "metadata": { "name": req.name, "scope": scope },
-        "spec": {
-            "description": req.description,
-            "triggers": req.triggers,
-            "content": req.content,
-        },
-    });
-    let config_yaml = serde_yaml::to_string(&config).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string())))
-    )?;
-    let mut node = registry::domain::Node::new(
-        arn.clone(),
-        registry::domain::NodeType::Skill,
-        req.name.clone(),
-        scope.clone(),
-        format!("{}/skill", scope),
-    );
-    node.config_json = Some(config_yaml);
-    state.save_node(node).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e)))
-    )?;
-    Ok((
-        StatusCode::CREATED,
-        Json(serde_json::json!({
-            "arn": arn,
-            "name": req.name,
-            "scope": scope,
-            "created_at": chrono::Utc::now().to_rfc3339()
-        })),
-    ))
+    skill::create(std::sync::Arc::new(state), req).await
 }
 
 pub async fn get_skill(
     State(state): State<RestState>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let arn = validate_arn(&arn)?;
-    match state.get_node(&arn) {
-        Some(node) => {
-            Ok(Json(serde_json::json!({
-                "id": node.id,
-                "name": node.name,
-                "namespace": node.namespace,
-                "scope": node.scope,
-                "config": node.config_json,
-                "created_at": node.created_at.to_rfc3339(),
-                "updated_at": node.updated_at.to_rfc3339(),
-            })))
-        }
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Skill '{}' not found", arn))),
-        ))
-    }
+    skill::get(std::sync::Arc::new(state), &arn).await
 }
 
 pub async fn update_skill(
@@ -544,141 +255,38 @@ pub async fn update_skill(
     Path(arn): Path<String>,
     Json(req): Json<UpdateSkillRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let arn = validate_arn(&arn)?;
-    let existing = state.get_node(&arn).ok_or_else(||
-        (StatusCode::NOT_FOUND, Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Skill '{}' not found", arn))))
-    )?;
-    let mut config: serde_yaml::Value = existing.config_json
-        .as_ref()
-        .and_then(|c| serde_yaml::from_str(c).ok())
-        .unwrap_or_else(|| serde_yaml::Value::Mapping(Default::default()));
-    if let Some(desc) = req.description {
-        config["spec"]["description"] = serde_yaml::Value::String(desc);
-    }
-    if let Some(content) = req.content {
-        config["spec"]["content"] = serde_yaml::Value::String(content);
-    }
-    if let Some(triggers) = req.triggers {
-        let triggers_yaml: serde_yaml::Value = serde_yaml::from_str(
-            &serde_json::to_string(&serde_json::json!(triggers)).unwrap_or_default()
-        ).unwrap_or_default();
-        config["spec"]["triggers"] = triggers_yaml;
-    }
-    let config_yaml = serde_yaml::to_string(&config).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string())))
-    )?;
-    let mut updated = registry::domain::Node::new(
-        arn.clone(),
-        registry::domain::NodeType::Skill,
-        existing.name.clone(),
-        existing.scope.clone(),
-        existing.namespace.clone(),
-    );
-    updated.config_json = Some(config_yaml);
-    updated.checksum = existing.checksum.clone();
-    updated.created_at = existing.created_at;
-    state.save_node(updated).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e)))
-    )?;
-    Ok(Json(serde_json::json!({ "arn": arn })))
+    skill::update(std::sync::Arc::new(state), &arn, req).await
 }
 
 pub async fn delete_skill(
     State(state): State<RestState>,
     Path(arn): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let arn = validate_arn(&arn)?;
-    let deleted = state.delete_node(&arn).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e)))
-    )?;
-    if !deleted {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Skill '{}' not found", arn))),
-        ));
-    }
-    Ok(StatusCode::NO_CONTENT)
+    skill::delete(std::sync::Arc::new(state), &arn).await
 }
 
 // ============================================================================
-// Prompt Handlers
+// Prompt Handlers (delegated to resources::prompt)
 // ============================================================================
 
 pub async fn list_prompts(
     State(state): State<RestState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let nodes = state.list_by_type("prompt");
-    let prompts: Vec<_> = nodes.into_iter().map(|n| serde_json::json!({
-        "id": n.id,
-        "name": n.name,
-        "namespace": n.namespace,
-        "scope": n.scope,
-        "created_at": n.created_at.to_rfc3339(),
-    })).collect();
-    Ok(Json(serde_json::json!({ "prompts": prompts })))
+    prompt::list(std::sync::Arc::new(state)).await
 }
 
- pub async fn create_prompt(
+pub async fn create_prompt(
     State(state): State<RestState>,
     Json(req): Json<CreatePromptRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
-    let scope = &req.scope;
-    let arn = format!("arn:local:{}:prompt/{}", scope, req.name);
-    let config = serde_json::json!({
-        "apiVersion": "prompts.local/v1",
-        "kind": "Prompt",
-        "metadata": { "name": req.name, "scope": scope },
-        "spec": {
-            "description": req.description,
-            "content": req.content,
-        },
-    });
-    let config_yaml = serde_yaml::to_string(&config).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string())))
-    )?;
-    let mut node = registry::domain::Node::new(
-        arn.clone(),
-        registry::domain::NodeType::Prompt,
-        req.name.clone(),
-        scope.clone(),
-        format!("{}/prompt", scope),
-    );
-    node.config_json = Some(config_yaml);
-    state.save_node(node).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e)))
-    )?;
-    Ok((
-        StatusCode::CREATED,
-        Json(serde_json::json!({
-            "arn": arn,
-            "name": req.name,
-            "created_at": chrono::Utc::now().to_rfc3339()
-        })),
-    ))
+    prompt::create(std::sync::Arc::new(state), req).await
 }
 
 pub async fn get_prompt(
     State(state): State<RestState>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let arn = validate_arn(&arn)?;
-    match state.get_node(&arn) {
-        Some(node) => {
-            Ok(Json(serde_json::json!({
-                "id": node.id,
-                "name": node.name,
-                "namespace": node.namespace,
-                "scope": node.scope,
-                "config": node.config_json,
-                "created_at": node.created_at.to_rfc3339(),
-                "updated_at": node.updated_at.to_rfc3339(),
-            })))
-        }
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Prompt '{}' not found", arn))),
-        ))
-    }
+    prompt::get(std::sync::Arc::new(state), &arn).await
 }
 
 pub async fn update_prompt(
@@ -686,54 +294,14 @@ pub async fn update_prompt(
     Path(arn): Path<String>,
     Json(req): Json<UpdatePromptRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let arn = validate_arn(&arn)?;
-    let existing = state.get_node(&arn).ok_or_else(|| 
-        (StatusCode::NOT_FOUND, Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Prompt '{}' not found", arn))))
-    )?;
-    let mut config: serde_yaml::Value = existing.config_json
-        .as_ref()
-        .and_then(|c| serde_yaml::from_str(c).ok())
-        .unwrap_or_else(|| serde_yaml::Value::Mapping(Default::default()));
-    if let Some(desc) = req.description {
-        config["spec"]["description"] = serde_yaml::Value::String(desc);
-    }
-    if let Some(content) = req.content {
-        config["spec"]["content"] = serde_yaml::Value::String(content);
-    }
-    let config_yaml = serde_yaml::to_string(&config).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string())))
-    )?;
-    let mut updated = registry::domain::Node::new(
-        arn.clone(),
-        registry::domain::NodeType::Prompt,
-        existing.name.clone(),
-        existing.scope.clone(),
-        existing.namespace.clone(),
-    );
-    updated.config_json = Some(config_yaml);
-    updated.checksum = existing.checksum.clone();
-    updated.created_at = existing.created_at;
-    state.save_node(updated).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e)))
-    )?;
-    Ok(Json(serde_json::json!({ "arn": arn })))
+    prompt::update(std::sync::Arc::new(state), &arn, req).await
 }
 
 pub async fn delete_prompt(
     State(state): State<RestState>,
     Path(arn): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let arn = validate_arn(&arn)?;
-    let deleted = state.delete_node(&arn).map_err(|e|
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e)))
-    )?;
-    if !deleted {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Prompt '{}' not found", arn))),
-        ));
-    }
-    Ok(StatusCode::NO_CONTENT)
+    prompt::delete(std::sync::Arc::new(state), &arn).await
 }
 
 // ============================================================================
@@ -1170,4 +738,566 @@ pub async fn update_config(
         max_concurrent_executions: req.max_concurrent_executions.unwrap_or(10),
         artifact_size_threshold_bytes: 1048576,
     }))
+}
+
+// ============================================================================
+// Template Handlers (delegated to resources::template)
+// ============================================================================
+
+pub async fn list_templates(
+    State(state): State<RestState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    template::list(std::sync::Arc::new(state)).await
+}
+
+pub async fn create_template(
+    State(state): State<RestState>,
+    Json(req): Json<CreateTemplateRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
+    template::create(std::sync::Arc::new(state), req).await
+}
+
+pub async fn get_template(
+    State(state): State<RestState>,
+    Path(arn): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    template::get(std::sync::Arc::new(state), &arn).await
+}
+
+pub async fn update_template(
+    State(state): State<RestState>,
+    Path(arn): Path<String>,
+    Json(req): Json<UpdateTemplateRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    template::update(std::sync::Arc::new(state), &arn, req).await
+}
+
+pub async fn delete_template(
+    State(state): State<RestState>,
+    Path(arn): Path<String>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    template::delete(std::sync::Arc::new(state), &arn).await
+}
+
+// ============================================================================
+// Tool Handlers (delegated to resources::tool)
+// ============================================================================
+
+pub async fn list_tools(
+    State(state): State<RestState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    tool::list(std::sync::Arc::new(state)).await
+}
+
+pub async fn create_tool(
+    State(state): State<RestState>,
+    Json(req): Json<CreateToolRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
+    tool::create(std::sync::Arc::new(state), req).await
+}
+
+pub async fn get_tool(
+    State(state): State<RestState>,
+    Path(arn): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    tool::get(std::sync::Arc::new(state), &arn).await
+}
+
+pub async fn update_tool(
+    State(state): State<RestState>,
+    Path(arn): Path<String>,
+    Json(req): Json<UpdateToolRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    tool::update(std::sync::Arc::new(state), &arn, req).await
+}
+
+pub async fn delete_tool(
+    State(state): State<RestState>,
+    Path(arn): Path<String>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    tool::delete(std::sync::Arc::new(state), &arn).await
+}
+
+#[cfg(test)]
+mod tests {
+    use registry::domain::{Node, NodeType};
+    use registry::application::node_service::NodeService;
+    use registry::infrastructure::db::Database;
+    use registry::infrastructure::node_repository::SqliteNodeRepository;
+    use std::sync::Arc;
+
+    /// Helper: create a node_service backed by an in-memory SQLite database
+    fn make_node_service() -> Arc<NodeService> {
+        let db = Arc::new(Database::open_in_memory().expect("open in-memory db"));
+        let repo = Arc::new(SqliteNodeRepository::new(db));
+        Arc::new(NodeService::new(repo))
+    }
+
+    // ── Template CRUD tests ────────────────────────────────────────────
+
+    #[test]
+    fn template_crud_full_cycle() {
+        let svc = make_node_service();
+
+        // CREATE
+        let arn = "arn:local:global:template/my-template";
+        let config = serde_json::json!({
+            "apiVersion": "templates.local/v1",
+            "kind": "Template",
+            "metadata": { "name": "my-template", "scope": "global" },
+            "spec": {
+                "description": "Test template",
+                "content_path": "templates/my-template.md",
+                "format": "markdown",
+                "target_kind": "prompt",
+            },
+        });
+        let node = Node::new_global(arn.to_string(), NodeType::Template, "my-template".to_string())
+            .with_config(config.clone());
+        svc.create(node).expect("create template");
+
+        // READ
+        let fetched = svc.get(arn).expect("get").expect("should exist");
+        assert_eq!(fetched.name, "my-template");
+        assert_eq!(fetched.node_type, NodeType::Template);
+        assert!(fetched.config_json.is_some());
+
+        // Parse config back to verify roundtrip
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&fetched.config_json.unwrap()).unwrap();
+        assert_eq!(parsed["spec"]["format"], "markdown");
+        assert_eq!(parsed["spec"]["target_kind"], "prompt");
+
+        // UPDATE
+        let mut updated_config = config.clone();
+        updated_config["spec"]["format"] = serde_json::json!("json");
+        let mut updated_node = Node::new_global(arn.to_string(), NodeType::Template, "my-template".to_string())
+            .with_config(updated_config.clone());
+        updated_node.created_at = fetched.created_at;
+        svc.update(updated_node).expect("update template");
+
+        // Verify update
+        let after_update = svc.get(arn).expect("get").expect("should exist");
+        let parsed2: serde_yaml::Value = serde_yaml::from_str(&after_update.config_json.unwrap()).unwrap();
+        assert_eq!(parsed2["spec"]["format"], "json");
+
+        // DELETE
+        svc.delete(arn).expect("delete");
+        assert!(svc.get(arn).expect("get").is_none());
+    }
+
+    #[test]
+    fn template_list_returns_only_templates() {
+        let svc = make_node_service();
+
+        // Create a template
+        let template_arn = "arn:local:global:template/list-test";
+        let node = Node::new_global(template_arn.to_string(), NodeType::Template, "list-test".to_string());
+        svc.create(node).expect("create template");
+
+        // Create a tool (different type)
+        let tool_arn = "arn:local:global:tool/some-tool";
+        let tool_node = Node::new_global(tool_arn.to_string(), NodeType::Tool, "some-tool".to_string());
+        svc.create(tool_node).expect("create tool");
+
+        // List templates only
+        let templates = svc.list_by_type(NodeType::Template).expect("list templates");
+        assert!(templates.iter().any(|n| n.id == template_arn));
+        assert!(!templates.iter().any(|n| n.id == tool_arn));
+    }
+
+    // ── Tool CRUD tests ────────────────────────────────────────────────
+
+    #[test]
+    fn tool_crud_full_cycle() {
+        let svc = make_node_service();
+
+        // CREATE
+        let arn = "arn:local:global:tool/my-tool";
+        let config = serde_json::json!({
+            "apiVersion": "tools.local/v1",
+            "kind": "Tool",
+            "metadata": { "name": "my-tool", "scope": "global" },
+            "spec": {
+                "description": "A custom tool",
+                "source": "custom://my-tool",
+                "source_type": "custom",
+                "category": "quality",
+                "tags": ["linter", "custom"],
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "File to lint" }
+                    },
+                    "required": ["path"]
+                },
+                "implementation_path": "tools/my-linter.sh",
+                "runtime": "bash",
+            },
+        });
+        let node = Node::new_global(arn.to_string(), NodeType::Tool, "my-tool".to_string())
+            .with_config(config.clone());
+        svc.create(node).expect("create tool");
+
+        // READ
+        let fetched = svc.get(arn).expect("get").expect("should exist");
+        assert_eq!(fetched.name, "my-tool");
+        assert_eq!(fetched.node_type, NodeType::Tool);
+
+        // Parse config back to verify
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&fetched.config_json.unwrap()).unwrap();
+        assert_eq!(parsed["spec"]["source_type"], "custom");
+        assert_eq!(parsed["spec"]["category"], "quality");
+
+        // UPDATE — change category and add tags
+        let mut updated_config = config.clone();
+        updated_config["spec"]["category"] = serde_json::json!("testing");
+        let mut updated_node = Node::new_global(arn.to_string(), NodeType::Tool, "my-tool".to_string())
+            .with_config(updated_config);
+        updated_node.created_at = fetched.created_at;
+        svc.update(updated_node).expect("update tool");
+
+        // Verify
+        let after = svc.get(arn).expect("get").expect("should exist");
+        let parsed2: serde_yaml::Value = serde_yaml::from_str(&after.config_json.unwrap()).unwrap();
+        assert_eq!(parsed2["spec"]["category"], "testing");
+
+        // DELETE
+        svc.delete(arn).expect("delete");
+        assert!(svc.get(arn).expect("get").is_none());
+    }
+
+    #[test]
+    fn tool_list_returns_only_tools() {
+        let svc = make_node_service();
+
+        // Create tools
+        let tool1 = Node::new_global("arn:local:global:tool/tool-a".to_string(), NodeType::Tool, "tool-a".to_string());
+        let tool2 = Node::new_global("arn:local:global:tool/tool-b".to_string(), NodeType::Tool, "tool-b".to_string());
+        svc.create(tool1).expect("create tool-a");
+        svc.create(tool2).expect("create tool-b");
+
+        // Create an agent (different type)
+        let agent = Node::new_global("arn:local:global:agent/agent-1".to_string(), NodeType::Agent, "agent-1".to_string());
+        svc.create(agent).expect("create agent");
+
+        let tools = svc.list_by_type(NodeType::Tool).expect("list tools");
+        assert_eq!(tools.len(), 2);
+        assert!(tools.iter().all(|n| n.node_type == NodeType::Tool));
+    }
+
+    #[test]
+    fn tool_create_duplicate_arn_fails() {
+        let svc = make_node_service();
+
+        let arn = "arn:local:global:tool/duplicate";
+        let node = Node::new_global(arn.to_string(), NodeType::Tool, "duplicate".to_string());
+        svc.create(node).expect("first create");
+
+        // Second create with same ARN should fail
+        let node2 = Node::new_global(arn.to_string(), NodeType::Tool, "duplicate".to_string());
+        assert!(svc.create(node2).is_err());
+    }
+
+    #[test]
+    fn template_create_duplicate_arn_fails() {
+        let svc = make_node_service();
+
+        let arn = "arn:local:global:template/duplicate";
+        let node = Node::new_global(arn.to_string(), NodeType::Template, "duplicate".to_string());
+        svc.create(node).expect("first create");
+
+        let node2 = Node::new_global(arn.to_string(), NodeType::Template, "duplicate".to_string());
+        assert!(svc.create(node2).is_err());
+    }
+
+    #[test]
+    fn tool_get_nonexistent_returns_none() {
+        let svc = make_node_service();
+        let result = svc.get("arn:local:global:tool/does-not-exist").expect("get");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn template_delete_nonexistent_succeeds() {
+        let svc = make_node_service();
+        // Delete of non-existent node should not error (idempotent)
+        svc.delete("arn:local:global:template/ghost").expect("delete should not error");
+    }
+}
+
+// ============================================================================
+// Schema Handlers (ADR-0016)
+// ============================================================================
+
+/// GET /schemas/:type - Returns JSON Schema for a resource type
+pub async fn get_schema(
+    Path(type_name): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let resource_type = match type_name.to_lowercase().as_str() {
+        "workflow" => schema::SchemaType::Workflow,
+        "agent" => schema::SchemaType::Agent,
+        "skill" => schema::SchemaType::Skill,
+        "prompt" => schema::SchemaType::Prompt,
+        "tool" => schema::SchemaType::Tool,
+        "template" => schema::SchemaType::Template,
+        _ => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::new(
+                    "INVALID_SCHEMA_TYPE",
+                    &format!("Unknown schema type: {}. Valid: workflow, agent, skill, prompt, tool, template", type_name),
+                )),
+            ))
+        }
+    };
+
+    match schema::get_schema_for_type(resource_type) {
+        Some(schema_json) => Ok(Json(schema_json)),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::new("SCHEMA_NOT_FOUND", &format!("Schema not found for type: {}", type_name))),
+        ))
+    }
+}
+
+/// GET /content/:arn - Returns raw file content for a resource
+pub async fn get_content(
+    State(state): State<RestState>,
+    Path(arn): Path<String>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
+    let arn = validate_arn(&arn)?;
+
+    // Look up the node to get the file path
+    let node = state.get_node(&arn)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e))))?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Resource '{}' not found", arn))),
+            )
+        })?;
+
+    // Try to read the content from the file
+    let content_path = state.app_state.get_content_path(&arn);
+    let content = if let Some(path) = content_path {
+        std::fs::read_to_string(&path).unwrap_or_default()
+    } else {
+        node.config_json.as_ref().map(|c| c.as_str()).unwrap_or("").to_string()
+    };
+
+    // For templates, derive content type from format field in frontmatter
+    let content_type = if arn.contains("/template/") {
+        get_template_content_type(&content)
+    } else {
+        get_content_type(&arn).to_string()
+    };
+
+    Ok((StatusCode::OK, Json(serde_json::json!({
+        "arn": arn,
+        "content": content,
+        "content_type": content_type,
+    }))))
+}
+
+/// PUT /content/:arn - Updates raw file content for a resource
+pub async fn put_content(
+    State(state): State<RestState>,
+    Path(arn): Path<String>,
+    Json(req): Json<UpdateContentRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
+    let arn = validate_arn(&arn)?;
+
+    // Verify the resource exists
+    let _node = state.get_node(&arn)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e))))?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Resource '{}' not found", arn))),
+            )
+        })?;
+
+    // Run full validation before writing
+    let resource_type = parse_resource_type_from_arn(&arn)?;
+    let registry_view = RegistryViewAdapter { state: state.app_state.clone() };
+    let validation_result = validation::validate_resource(&arn, resource_type, &req.content, &registry_view);
+
+    if !validation_result.is_valid() {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(ErrorResponse::new(
+                "VALIDATION_FAILED",
+                &format!(
+                    "Content validation failed: {}",
+                    validation_result.diagnostics().first()
+                        .map(|d| d.message.as_str())
+                        .unwrap_or("Unknown validation error")
+                ),
+            )),
+        ));
+    }
+
+    // Try to write the content to the file
+    let content_path = state.app_state.get_content_path(&arn);
+    if let Some(path) = content_path {
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::new("IO_ERROR", &e.to_string())),
+                )
+            })?;
+        }
+        std::fs::write(&path, &req.content).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new("IO_ERROR", &e.to_string())),
+            )
+        })?;
+    }
+
+    Ok((StatusCode::OK, Json(serde_json::json!({
+        "arn": arn,
+        "message": "Content updated successfully",
+    }))))
+}
+
+/// POST /validate/:arn - Validates resource content and returns diagnostics
+pub async fn validate_resource(
+    State(state): State<RestState>,
+    Path(arn): Path<String>,
+    Json(req): Json<ValidateResourceRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let arn = validate_arn(&arn)?;
+
+    // Determine resource type from ARN
+    let resource_type = parse_resource_type_from_arn(&arn)?;
+
+    // Create a registry view adapter
+    let registry_view = RegistryViewAdapter { state: state.app_state.clone() };
+
+    // Validate the content
+    let result = validation::validate_resource(&arn, resource_type, &req.content, &registry_view);
+
+    Ok(Json(serde_json::json!({
+        "arn": arn,
+        "valid": result.is_valid(),
+        "diagnostics": result.diagnostics(),
+        "summary": result.summary(),
+    })))
+}
+
+// ============================================================================
+// Helper Types and Functions
+// ============================================================================
+
+/// Adapter to implement validation::RegistryView for AppState
+struct RegistryViewAdapter {
+    state: std::sync::Arc<crate::state::AppState>,
+}
+
+impl validation::RegistryView for RegistryViewAdapter {
+    fn node_exists(&self, arn: &str) -> bool {
+        self.state.node_service.get(arn).ok().flatten().is_some()
+    }
+
+    fn get_node_name(&self, arn: &str) -> Option<String> {
+        self.state.node_service.get(arn).ok().flatten().map(|n| n.name)
+    }
+
+    fn get_node_type(&self, arn: &str) -> Option<validation::ResourceType> {
+        let node = self.state.node_service.get(arn).ok().flatten()?;
+        match node.node_type.as_str() {
+            "workflow" => Some(validation::ResourceType::Workflow),
+            "agent" => Some(validation::ResourceType::Agent),
+            "skill" => Some(validation::ResourceType::Skill),
+            "prompt" => Some(validation::ResourceType::Prompt),
+            "tool" => Some(validation::ResourceType::Tool),
+            "template" => Some(validation::ResourceType::Template),
+            _ => None,
+        }
+    }
+}
+
+fn parse_resource_type_from_arn(arn: &str) -> Result<validation::ResourceType, (StatusCode, Json<ErrorResponse>)> {
+    // ARN format:
+    //   arn:local:global:{type}/{name}           → 5 parts, type at index 3
+    //   arn:local:workspace/{id}:{type}/{name}   → 6 parts, type at index 4
+    let parts: Vec<&str> = arn.split(':').collect();
+
+    let type_index = match parts.len() {
+        5 => 3,   // global scope: arn:local:global:agent/foo
+        6 => 4,   // workspace scope: arn:local:workspace/abc123:agent/foo
+        _ => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::new("INVALID_ARN", &format!("Invalid ARN format: {}", arn))),
+            ));
+        }
+    };
+
+    match parts[type_index] {
+        "workflow" => Ok(validation::ResourceType::Workflow),
+        "agent" => Ok(validation::ResourceType::Agent),
+        "skill" => Ok(validation::ResourceType::Skill),
+        "prompt" => Ok(validation::ResourceType::Prompt),
+        "tool" => Ok(validation::ResourceType::Tool),
+        "template" => Ok(validation::ResourceType::Template),
+        _ => Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new("INVALID_RESOURCE_TYPE", &format!("Unknown resource type in ARN: {}", arn))),
+        ))
+    }
+}
+
+fn get_content_type(arn: &str) -> &'static str {
+    if arn.contains("/skill/") {
+        "text/markdown"
+    } else if arn.contains("/prompt/") {
+        "text/markdown"
+    } else if arn.contains("/template/") {
+        // Templates can have different formats based on their format field
+        // Default to text/markdown but could be derived from content
+        "text/markdown"
+    } else {
+        "text/yaml"
+    }
+}
+
+/// Derive content type from template content's format field
+fn get_template_content_type(content: &str) -> String {
+    // Try to extract format from YAML frontmatter
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with("---") {
+        return "text/markdown".to_string();
+    }
+    let after_first_dash = &trimmed[3..];
+    if let Some(end_idx) = after_first_dash.find("\n---") {
+        let frontmatter = &after_first_dash[..end_idx];
+        for line in frontmatter.lines() {
+            if let Some(format) = line.strip_prefix("format:") {
+                let format = format.trim();
+                return match format {
+                    "json" => "application/json".to_string(),
+                    "yaml" | "yml" => "text/yaml".to_string(),
+                    "xml" => "application/xml".to_string(),
+                    "html" => "text/html".to_string(),
+                    "markdown" | "md" => "text/markdown".to_string(),
+                    _ => format!("text/{}", format),
+                };
+            }
+        }
+    }
+    "text/markdown".to_string()
+}
+
+#[derive(serde::Deserialize)]
+pub struct UpdateContentRequest {
+    content: String,
+}
+
+#[derive(serde::Deserialize)]
+pub struct ValidateResourceRequest {
+    content: String,
 }

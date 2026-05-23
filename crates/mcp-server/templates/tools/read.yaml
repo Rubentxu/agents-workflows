@@ -1,0 +1,24 @@
+arn: arn:local:global:tool/read
+name: read
+description: "Read file or directory contents from the local filesystem"
+source: "builtin://read"
+source_type: "builtin"
+category: "core"
+input_schema:
+  type: object
+  properties:
+    filePath:
+      type: string
+      description: "Absolute path to the file or directory"
+    offset:
+      type: integer
+      description: "Line number to start reading from (1-indexed)"
+    limit:
+      type: integer
+      description: "Maximum number of lines to read"
+  required:
+    - filePath
+tags:
+  - "file"
+  - "read"
+  - "core"

@@ -21,6 +21,7 @@ pub mod rest_handlers;
 pub mod studio;
 pub mod bootstrap;
 pub mod auth;
+pub mod resources;
 
 pub use state::AppState;
 pub use metrics_sse::MetricsBroadcaster;

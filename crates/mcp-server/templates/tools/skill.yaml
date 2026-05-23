@@ -1,0 +1,18 @@
+arn: arn:local:global:tool/skill
+name: skill
+description: "Load a specialized skill to inject domain-specific instructions"
+source: "builtin://skill"
+source_type: "builtin"
+category: "mcp"
+input_schema:
+  type: object
+  properties:
+    name:
+      type: string
+      description: "Name of the skill to load"
+  required:
+    - name
+tags:
+  - "skill"
+  - "load"
+  - "mcp"

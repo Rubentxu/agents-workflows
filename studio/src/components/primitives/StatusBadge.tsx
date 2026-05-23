@@ -3,6 +3,8 @@ type BadgeStatus =
   | 'success'
   | 'failed'
   | 'queued'
+  | 'aborted'
+  | 'paused'
   | 'cancelled'
   | 'unknown'
   | 'active'
@@ -16,12 +18,14 @@ interface StatusBadgeProps {
 
 const statusConfig: Record<
   BadgeStatus,
-  { bg: string; color: string; icon: 'check' | 'x' | 'clock' | 'spinner' | 'dot' | 'pulse' }
+  { bg: string; color: string; icon: 'check' | 'x' | 'clock' | 'spinner' | 'dot' | 'pulse' | 'pause' }
 > = {
   running: { bg: 'var(--color-primary-container)', color: 'var(--color-primary)', icon: 'spinner' },
   success: { bg: 'var(--color-success-container)', color: 'var(--color-success)', icon: 'check' },
   failed: { bg: 'var(--color-error-container)', color: 'var(--color-error)', icon: 'x' },
   queued: { bg: 'var(--color-warning-container)', color: 'var(--color-warning)', icon: 'clock' },
+  aborted: { bg: 'var(--color-surface-container-high)', color: 'var(--color-on-surface)', icon: 'x' },
+  paused: { bg: 'var(--color-tertiary-container)', color: 'var(--color-on-tertiary-container)', icon: 'pause' },
   cancelled: { bg: 'var(--color-surface-container-high)', color: 'var(--color-on-surface)', icon: 'x' },
   unknown: { bg: 'var(--color-surface-container-high)', color: 'var(--color-on-surface)', icon: 'dot' },
   active: { bg: 'var(--color-success-container)', color: 'var(--color-success)', icon: 'pulse' },
@@ -33,6 +37,8 @@ const defaultLabels: Record<BadgeStatus, string> = {
   success: 'Success',
   failed: 'Failed',
   queued: 'Queued',
+  aborted: 'Aborted',
+  paused: 'Paused',
   cancelled: 'Cancelled',
   unknown: 'Unknown',
   active: 'Active',
@@ -70,6 +76,13 @@ function StatusIcon({ type, color }: { type: string; color: string }) {
       return (
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
           <circle cx="6" cy="6" r="3" fill={color} className="status-badge__pulse-dot" />
+        </svg>
+      );
+    case 'pause':
+      return (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <rect x="3" y="2.5" width="2" height="7" rx="0.5" fill={color} />
+          <rect x="7" y="2.5" width="2" height="7" rx="0.5" fill={color} />
         </svg>
       );
     default:

@@ -1,7 +1,7 @@
 /**
  * Node types in the registry
  */
-export type NodeType = 'workflow' | 'agent' | 'skill' | 'tool' | 'prompt' | 'resource';
+export type NodeType = 'workflow' | 'agent' | 'skill' | 'tool' | 'prompt' | 'template' | 'resource';
 
 /**
  * Node in the registry graph

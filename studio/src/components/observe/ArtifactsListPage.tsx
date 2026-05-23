@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useExecutionApi } from '@/hooks/useExecutionApi';
 import { LoadingState } from '@/components/states/LoadingState';
@@ -35,6 +35,10 @@ export function ArtifactsListPage() {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
+
+  useEffect(() => {
+    void fetchArtifacts();
+  }, [fetchArtifacts]);
 
   return (
     <div className="flex flex-col h-full">

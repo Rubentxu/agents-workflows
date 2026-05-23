@@ -292,7 +292,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
   const categories: { key: Category; label: string }[] = [
     { key: 'navigation', label: 'Navigation' },
     { key: 'resources', label: 'Resources' },
-    { key: 'executions', label: 'Executions' },
+    { key: 'executions', label: 'Agent Executions' },
     { key: 'actions', label: 'Actions' },
   ];
 
@@ -410,6 +410,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
 
   return (
     <div
+      data-testid="command-palette-overlay"
       style={{
         position: 'fixed',
         inset: 0,
@@ -422,6 +423,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
       onClick={onClose}
     >
       <div
+        data-testid="command-palette-dialog"
         style={{
           position: 'absolute',
           inset: 0,
@@ -462,6 +464,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search workflows, agents, executions, pages..."
+            data-testid="command-palette-input"
             style={{
               flex: 1,
               fontSize: '14px',
@@ -508,6 +511,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
               <button
                 key={cat.key}
                 onClick={() => setActiveCategory(cat.key)}
+                data-testid={`command-palette-category-${cat.key}`}
                 style={{
                   padding: '4px 12px',
                   fontSize: '12px',
@@ -539,6 +543,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
 
         <div
           ref={listRef}
+          data-testid="command-palette-results"
           style={{
             flex: 1,
             overflowY: 'auto',

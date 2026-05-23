@@ -3,6 +3,7 @@
  */
 
 import { useCallback, useState } from 'react';
+import { restApiUrl } from '@/lib/apiBase';
 
 export interface Insight {
   id: number;
@@ -32,7 +33,7 @@ export function useInsightsApi() {
       if (options?.stage_id) params.set('stage_id', options.stage_id);
       if (options?.insight_type) params.set('insight_type', options.insight_type);
 
-      const response = await fetch(`/api/insights?${params}`);
+      const response = await fetch(restApiUrl(`/insights?${params}`));
       if (!response.ok) throw new Error(`API error: ${response.status}`);
       const data = await response.json() as { insights?: Insight[] };
       return data.insights ?? [];

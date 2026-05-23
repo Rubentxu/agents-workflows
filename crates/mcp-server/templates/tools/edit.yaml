@@ -1,0 +1,29 @@
+arn: arn:local:global:tool/edit
+name: edit
+description: "Perform exact string replacements in files"
+source: "builtin://edit"
+source_type: "builtin"
+category: "core"
+input_schema:
+  type: object
+  properties:
+    filePath:
+      type: string
+      description: "Absolute path to the file to modify"
+    oldString:
+      type: string
+      description: "Text to replace"
+    newString:
+      type: string
+      description: "Replacement text"
+    replaceAll:
+      type: boolean
+      description: "Replace all occurrences"
+  required:
+    - filePath
+    - oldString
+    - newString
+tags:
+  - "file"
+  - "edit"
+  - "core"

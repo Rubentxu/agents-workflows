@@ -1,0 +1,22 @@
+arn: arn:local:global:tool/write
+name: write
+description: "Write content to a file on the local filesystem"
+source: "builtin://write"
+source_type: "builtin"
+category: "core"
+input_schema:
+  type: object
+  properties:
+    filePath:
+      type: string
+      description: "Absolute path for the file"
+    content:
+      type: string
+      description: "Content to write"
+  required:
+    - filePath
+    - content
+tags:
+  - "file"
+  - "write"
+  - "core"

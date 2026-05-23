@@ -448,11 +448,11 @@ function ProjectsTab({ projectId }: { projectId: string }) {
         </div>
       </div>
       <div className="bg-surface border border-outline-variant rounded-lg p-12 text-center">
-        <div className="text-4xl mb-4 opacity-30">📁</div>
+        <div className="text-4xl mb-4 opacity-40" aria-hidden="true">▣</div>
         <h3 className="text-base font-medium text-on-surface mb-2">Project Management</h3>
         <p className="text-sm text-secondary max-w-sm mx-auto">
           Project-level settings and management are handled at the{' '}
-          <a href="/studio/projects" className="text-primary hover:underline">
+          <a href="/studio/projects" className="text-primary underline underline-offset-2 hover:no-underline font-medium">
             Projects
           </a>{' '}
           page.

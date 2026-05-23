@@ -15,6 +15,7 @@ interface WorkspaceSelectorProps {
   loading?: boolean;
   error?: string;
   onRetry?: () => void;
+  testId?: string;
 }
 
 function ChevronDown() {
@@ -82,6 +83,7 @@ export function WorkspaceSelector({
   loading = false,
   error,
   onRetry,
+  testId = 'workspace-selector',
 }: WorkspaceSelectorProps) {
   const [open, setOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
@@ -142,7 +144,7 @@ export function WorkspaceSelector({
     : activeWorkspace?.name ?? 'Select workspace';
 
   return (
-    <div className="workspace-selector" ref={containerRef} onKeyDown={handleKeyDown}>
+    <div className="workspace-selector" ref={containerRef} onKeyDown={handleKeyDown} data-testid={testId}>
       <button
         className="workspace-selector__trigger"
         onClick={() => setOpen((prev) => !prev)}
@@ -150,6 +152,7 @@ export function WorkspaceSelector({
         aria-expanded={open}
         aria-haspopup="listbox"
         disabled={loading}
+        data-testid={`${testId}-trigger`}
       >
         {loading ? (
           <Spinner />
@@ -170,6 +173,7 @@ export function WorkspaceSelector({
           ref={listRef}
           role="listbox"
           aria-label="Select workspace"
+          data-testid={`${testId}-dropdown`}
         >
           {loading && (
             <div className="workspace-selector__skeleton">
@@ -203,6 +207,7 @@ export function WorkspaceSelector({
                 role="option"
                 aria-selected={activeWorkspaceId === null}
                 data-focused={focusedIndex === 0}
+                data-testid={`${testId}-option-all`}
               >
                 <span className="workspace-selector__item-icon">
                   <AllWorkspacesIcon />
@@ -225,10 +230,11 @@ export function WorkspaceSelector({
                   className={`workspace-selector__item${ws.id === activeWorkspaceId ? ' workspace-selector__item--active' : ''}`}
                   onClick={() => { onSelect(ws.id); close(); }}
                   type="button"
-                  role="option"
-                  aria-selected={ws.id === activeWorkspaceId}
-                  data-focused={focusedIndex === i + 1}
-                >
+                    role="option"
+                    aria-selected={ws.id === activeWorkspaceId}
+                    data-focused={focusedIndex === i + 1}
+                    data-testid={`${testId}-option-${ws.id}`}
+                  >
                   <span className="workspace-selector__item-icon">
                     <WorkspaceIcon />
                   </span>
@@ -248,6 +254,7 @@ export function WorkspaceSelector({
             onClick={() => { onCreateWorkspace(); close(); }}
             type="button"
             data-focused={focusedIndex === workspaces.length + 1}
+            data-testid={`${testId}-create`}
           >
             + Create workspace
           </button>

@@ -226,6 +226,7 @@ mod tests {
             analytics_service: Arc::new(insights::AnalyticsService::new()),
             sse_emitter: Arc::new(metrics::application::SseEmitter::new()),
             metrics_aggregator: Arc::new(metrics::application::MetricsAggregator::new()),
+            workspace_root: std::path::PathBuf::from("/tmp/test-workspace"),
         })
     }
 

@@ -141,7 +141,7 @@ function RegistryList({ onNodeClick }: RegistryListProps) {
         .map((type) => (
           <div key={type}>
             <div className="px-4 py-2 text-xs font-semibold text-on-surface/50 uppercase tracking-wide bg-surface-container-low">
-              {type}s ({grouped[type].length})
+              {type}s ({grouped[type]?.length ?? 0})
             </div>
             {grouped[type].map((node) => (
               <button

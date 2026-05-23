@@ -40,37 +40,54 @@ impl RestState {
     }
 
     /// List nodes by type
-    pub fn list_by_type(&self, node_type: &str) -> Vec<registry::domain::Node> {
+    pub fn list_by_type(&self, node_type: &str) -> Result<Vec<registry::domain::Node>, String> {
         let nt = match node_type.to_lowercase().as_str() {
             "workflow" => NodeType::Workflow,
             "agent" => NodeType::Agent,
             "skill" => NodeType::Skill,
             "tool" => NodeType::Tool,
             "prompt" => NodeType::Prompt,
-            _ => return vec![],
+            "template" => NodeType::Template,
+            _ => return Ok(vec![]),
         };
-        self.app_state.node_service.list_by_type(nt).unwrap_or_default()
+        self.app_state.node_service.list_by_type(nt).map_err(|e| e.to_string())
     }
 
     /// Get a node by ARN
-    pub fn get_node(&self, arn: &str) -> Option<registry::domain::Node> {
-        self.app_state.node_service.get(arn).ok().flatten()
+    pub fn get_node(&self, arn: &str) -> Result<Option<registry::domain::Node>, String> {
+        self.app_state.node_service.get(arn).map_err(|e| e.to_string())
     }
 
     /// Save (create or update) a node — tries create, falls back to update
     pub fn save_node(&self, node: registry::domain::Node) -> Result<registry::domain::Node, String> {
-        // Try create first; if it already exists (conflict), update instead
+        // Try create first; if it already exists (conflict), return error
+        // rather than silently updating
         match self.app_state.node_service.create(node.clone()) {
             Ok(n) => Ok(n),
-            Err(_) => self.app_state.node_service.update(node).map_err(|e| e.to_string()),
+            Err(e) => {
+                // Check if it's a duplicate error - if so, propagate as conflict
+                if matches!(e, registry::domain::RegistryError::DuplicateNode(_)) {
+                    return Err(e.to_string());
+                }
+                // For other errors, fall back to update
+                self.app_state.node_service.update(node).map_err(|e| e.to_string())
+            }
         }
     }
 
     /// Delete a node by ARN. Returns true if a node was deleted, false if it didn't exist.
     pub fn delete_node(&self, arn: &str) -> Result<bool, String> {
+        // Check if the node exists first - if not, return Ok(false) to indicate not found
+        let node = self.app_state.node_service.get(arn)
+            .map_err(|e| e.to_string())?;
+
+        if node.is_none() {
+            return Ok(false);
+        }
+
+        // Delete the node
         self.app_state.node_service.delete(arn).map_err(|e| e.to_string())?;
-        // Check if we actually deleted something by verifying the node is gone
-        Ok(self.app_state.node_service.get(arn).ok().flatten().is_none())
+        Ok(true)
     }
 }
 
@@ -119,6 +136,20 @@ pub fn create_rest_router(state: RestState) -> Router {
         .route("/prompts/:arn", put(update_prompt))
         .route("/prompts/:arn", delete(delete_prompt))
 
+        // Templates — ADR-0013
+        .route("/templates", get(list_templates))
+        .route("/templates", post(create_template))
+        .route("/templates/:arn", get(get_template))
+        .route("/templates/:arn", put(update_template))
+        .route("/templates/:arn", delete(delete_template))
+
+        // Tools — ADR-0014
+        .route("/tools", get(list_tools))
+        .route("/tools", post(create_tool))
+        .route("/tools/:arn", get(get_tool))
+        .route("/tools/:arn", put(update_tool))
+        .route("/tools/:arn", delete(delete_tool))
+
         // Executions
         .route("/executions", get(list_executions))
         .route("/executions/:arn", get(get_execution))
@@ -146,6 +177,16 @@ pub fn create_rest_router(state: RestState) -> Router {
         // Config
         .route("/config", get(get_config))
         .route("/config", put(update_config))
+
+        // Schemas (ADR-0016)
+        .route("/schemas/:type", get(get_schema))
+
+        // Content (ADR-0016)
+        .route("/content/:arn", get(get_content))
+        .route("/content/:arn", put(put_content))
+
+        // Validate (ADR-0016)
+        .route("/validate/:arn", post(validate_resource))
 
         .layer(cors)
         .layer(middleware::from_fn(auth_middleware))

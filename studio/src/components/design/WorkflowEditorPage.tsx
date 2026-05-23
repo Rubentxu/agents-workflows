@@ -120,7 +120,7 @@ export function WorkflowEditorPage() {
   const { getResourceByArn } = useMcpTools();
   const { createResource, updateResource } = useResourceApi();
 
-  const isNew = workflowId === 'new';
+  const isNew = !workflowId || workflowId === 'new';
   const arn = searchParams.get('arn');
 
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
@@ -218,6 +218,17 @@ export function WorkflowEditorPage() {
       });
     }
   }, [isNew, workflow, projectId]);
+
+  // Sync workflow stages to nodes/edges when YAML editor applies changes
+  // This enables bidirectional sync: Visual ↔ YAML
+  useEffect(() => {
+    if (!workflow) return;
+    // Only sync if we have stages (not initial empty state)
+    if (workflow.stages.length > 0) {
+      setNodes(buildNodes(workflow.stages));
+      setEdges(buildEdges(workflow.stages));
+    }
+  }, [workflow?.stages, buildNodes, buildEdges, setNodes, setEdges]);
 
   const onConnect: OnConnect = useCallback(
     (params: Connection) => {
@@ -370,11 +381,32 @@ export function WorkflowEditorPage() {
                 node={selectedNode as StageNode}
                 workflow={workflowForInspector(workflow)}
                 onUpdate={(updated) => {
+                  // Update nodes in ReactFlow canvas
                   setNodes((nds) =>
                     nds.map((n) =>
                       n.id === selectedNodeId ? { ...n, data: { ...n.data, ...updated } } : n
                     )
                   );
+                  // Also update workflow.stages to keep in sync with visual canvas
+                  if (workflow) {
+                    setWorkflow((prev) => {
+                      if (!prev) return prev;
+                      return {
+                        ...prev,
+                        stages: prev.stages.map((s) =>
+                          s.id === selectedNodeId
+                            ? {
+                                ...s,
+                                id: (updated as { id?: string }).id ?? s.id,
+                                description: (updated as { description?: string }).description ?? s.description,
+                                agent: (updated as { agent?: string }).agent ?? s.agent,
+                                depends_on: (updated as { dependsOn?: string[] }).dependsOn ?? s.depends_on,
+                              }
+                            : s
+                        ),
+                      };
+                    });
+                  }
                 }}
                 onClose={() => setSelectedNodeId(null)}
               />

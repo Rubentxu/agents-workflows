@@ -1,0 +1,26 @@
+arn: arn:local:global:tool/task
+name: task
+description: "Launch a new agent to handle complex multi-step tasks autonomously"
+source: "builtin://task"
+source_type: "builtin"
+category: "mcp"
+input_schema:
+  type: object
+  properties:
+    prompt:
+      type: string
+      description: "Task description for the agent"
+    description:
+      type: string
+      description: "Short description (3-5 words)"
+    subagent_type:
+      type: string
+      description: "Type of agent to use"
+  required:
+    - prompt
+    - description
+    - subagent_type
+tags:
+  - "agent"
+  - "delegate"
+  - "mcp"

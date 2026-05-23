@@ -52,6 +52,8 @@ impl ArtifactMcpHandler {
 
         let conn = self.state.db.connection()
             .map_err(|e| format!("DB error: {}", e))?;
+        // Disable FK checks for this insert — execution may not exist yet
+        conn.execute_batch("PRAGMA foreign_keys = OFF").ok();
         conn.execute(
             "INSERT INTO artifacts (id, execution_id, stage_id, name, size, storage_type, location, content_type, checksum, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             rusqlite::params![

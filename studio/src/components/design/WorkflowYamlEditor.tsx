@@ -18,17 +18,18 @@ import yaml from 'js-yaml';
 import type { Workflow } from '@/types/workflow';
 import type { WorkflowManifest } from '@/types/manifest.workflow';
 import { API_VERSION } from '@/types/manifest';
+import { YamlMonacoEditor } from '@/components/monaco';
+import type { Diagnostic } from '@/components/monaco/YamlMonacoEditor';
 
 interface WorkflowYamlEditorProps {
   /** Internal Workflow object (arn, name, stages, etc.) */
   workflow: Workflow | null;
   /** Called with the parsed YAML, already converted to internal Workflow format */
   onChange: (updated: Workflow) => void;
+  /** JSON Schema for validation */
+  schema?: object;
 }
 
-/**
- * Convert a WorkflowManifest (YAML parse result) to the internal Workflow type.
- */
 function manifestToWorkflow(manifest: WorkflowManifest): Workflow {
   return {
     arn: `arn:local:${manifest.metadata.scope}:workflow/${manifest.metadata.name}`,
@@ -46,9 +47,6 @@ function manifestToWorkflow(manifest: WorkflowManifest): Workflow {
   };
 }
 
-/**
- * Serialize a Workflow (internal type) to a YAML manifest string.
- */
 function workflowToYaml(workflow: Workflow | null): string {
   if (!workflow) return '';
   const manifest: WorkflowManifest = {
@@ -73,14 +71,29 @@ function workflowToYaml(workflow: Workflow | null): string {
   return yaml.dump(manifest, { indent: 2, lineWidth: -1, noRefs: true });
 }
 
-export function WorkflowYamlEditor({ workflow, onChange }: WorkflowYamlEditorProps) {
+export function WorkflowYamlEditor({ workflow, onChange, schema }: WorkflowYamlEditorProps) {
   const [yamlContent, setYamlContent] = useState('');
   const [parseError, setParseError] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
 
   useEffect(() => {
     setYamlContent(workflowToYaml(workflow));
     setParseError(null);
   }, [workflow]);
+
+  const handleYamlChange = useCallback((newValue: string) => {
+    setYamlContent(newValue);
+  }, []);
+
+  const handleDiagnosticsChange = useCallback((newDiagnostics: Diagnostic[]) => {
+    setDiagnostics(newDiagnostics);
+    const errors = newDiagnostics.filter((d) => d.severity === 'error');
+    if (errors.length > 0) {
+      setParseError(errors[0].message);
+    } else {
+      setParseError(null);
+    }
+  }, []);
 
   const handleApply = useCallback(() => {
     try {
@@ -108,12 +121,16 @@ export function WorkflowYamlEditor({ workflow, onChange }: WorkflowYamlEditorPro
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-outline-variant bg-surface-container/30">
         <div className="flex items-center gap-2">
           <span className="text-xs text-secondary">Raw YAML</span>
           {parseError && (
             <span className="text-[10px] text-error">• {parseError}</span>
+          )}
+          {diagnostics.length > 0 && !parseError && (
+            <span className="text-[10px] text-warning">
+              • {diagnostics.length} warning{diagnostics.length !== 1 ? 's' : ''}
+            </span>
           )}
         </div>
         <button
@@ -125,13 +142,13 @@ export function WorkflowYamlEditor({ workflow, onChange }: WorkflowYamlEditorPro
         </button>
       </div>
 
-      {/* Editor */}
-      <div className="flex-1 overflow-auto p-4">
-        <textarea
+      <div className="flex-1 overflow-hidden">
+        <YamlMonacoEditor
           value={yamlContent}
-          onChange={(e) => setYamlContent(e.target.value)}
-          className="w-full h-full min-h-[400px] text-xs font-mono bg-surface-container border border-outline-variant rounded px-4 py-3 text-on-surface outline-none focus:border-primary resize-none leading-relaxed"
-          spellCheck={false}
+          onChange={handleYamlChange}
+          onDiagnosticsChange={handleDiagnosticsChange}
+          schema={schema}
+          height="100%"
         />
       </div>
     </div>

@@ -20,6 +20,10 @@ interface NavSectionDef {
   items: NavItemDef[];
 }
 
+function toTestId(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 function buildSections(base: string): NavSectionDef[] {
   return [
     {
@@ -42,7 +46,7 @@ function buildSections(base: string): NavSectionDef[] {
     {
       title: 'Observe',
       items: [
-        { to: `${base}/observe/agent-executions`, label: 'Executions', icon: '▶', section: 'observe' },
+        { to: `${base}/observe/agent-executions`, label: 'Agent Executions', icon: '▶', section: 'observe' },
         { to: `${base}/observe/insights`, label: 'Insights', icon: '◉', section: 'observe' },
         { to: `${base}/observe/artifacts`, label: 'Artifacts', icon: '☋', section: 'observe' },
         { to: `${base}/observe/metrics`, label: 'Metrics', icon: '◫', section: 'observe' },
@@ -91,9 +95,10 @@ export function Sidebar({ projectId }: SidebarProps) {
       className={`app-shell__sidebar${mobileMenuOpen ? ' app-shell__sidebar--mobile-open' : ''}`}
       role="navigation"
       aria-label="Main navigation"
+      data-testid="sidebar-navigation"
     >
       {sections.map((section) => (
-        <div key={section.title} className="nav-section">
+        <div key={section.title} className="nav-section" data-testid={`sidebar-section-${toTestId(section.title)}`}>
           <div className="nav-section__label">{section.title}</div>
           <nav>
             {section.items.map((item) => (
@@ -104,6 +109,7 @@ export function Sidebar({ projectId }: SidebarProps) {
                 className={`nav-item${isActive(item.to) ? ' nav-item--active' : ''}`}
                 title={sidebarCollapsed ? item.label : undefined}
                 aria-current={isActive(item.to) ? 'page' : undefined}
+                data-testid={`sidebar-nav-${toTestId(item.label)}`}
               >
                 <span className="nav-item__icon" aria-hidden="true">{item.icon}</span>
                 <span className="nav-item__label">{item.label}</span>

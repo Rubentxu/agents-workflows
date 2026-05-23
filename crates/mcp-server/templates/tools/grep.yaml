@@ -1,0 +1,24 @@
+arn: arn:local:global:tool/grep
+name: grep
+description: "Fast content search using regular expressions"
+source: "builtin://grep"
+source_type: "builtin"
+category: "search"
+input_schema:
+  type: object
+  properties:
+    pattern:
+      type: string
+      description: "Regex pattern to search for"
+    path:
+      type: string
+      description: "Directory to search in"
+    include:
+      type: string
+      description: "File pattern to include (e.g. *.rs)"
+  required:
+    - pattern
+tags:
+  - "search"
+  - "regex"
+  - "content"

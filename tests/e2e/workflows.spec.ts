@@ -10,146 +10,9 @@
 
 import '@playwright/test';
 import { test, expect } from '@playwright/test';
+import { MCPClient, extractArn } from '../helpers/mcp-client';
 
 const BASE_URL = process.env.AGENTS_WORKFLOWS_URL || 'http://localhost:8080';
-
-/**
- * MCP Client for these tests using native fetch
- */
-class MCPClient {
-  private sessionId: string | null = null;
-  private id = 1;
-  private initialized = false;
-  
-  constructor(private baseURL: string) {}
-  
-  /**
-   * Initialize MCP session
-   */
-  async initialize(): Promise<void> {
-    if (this.initialized) return;
-    
-    const response = await fetch(`${this.baseURL}/mcp`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'initialize',
-        params: {
-          protocolVersion: '1.0',
-          capabilities: {},
-          clientInfo: { name: 'test', version: '1.0.0' }
-        },
-        id: this.id++,
-      }),
-    });
-    
-    const body = await response.text();
-    for (const line of body.split('\n')) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('data:')) {
-        const content = trimmed.slice(5).trim();
-        if (content.startsWith('{')) {
-          const json = JSON.parse(content);
-          if (json.result) {
-            const sessionHeader = response.headers.get('mcp-session-id');
-            if (sessionHeader) {
-              this.sessionId = sessionHeader;
-            }
-          }
-          break;
-        }
-      }
-    }
-    
-    this.initialized = true;
-  }
-  
-  async request<T = unknown>(toolName: string, toolArgs: Record<string, unknown> = {}): Promise<T> {
-    // Ensure initialized first
-    if (!this.initialized) {
-      await this.initialize();
-    }
-    
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json, text/event-stream',
-    };
-    
-    if (this.sessionId) {
-      headers['MCP-Session-Id'] = this.sessionId;
-    }
-    
-    const response = await fetch(`${this.baseURL}/mcp`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'tools/call',
-        params: { name: toolName, arguments: toolArgs },
-        id: this.id++,
-      }),
-    });
-    
-    const sessionHeader = response.headers.get('mcp-session-id');
-    if (sessionHeader && !this.sessionId) {
-      this.sessionId = sessionHeader;
-    }
-    
-    const body = await response.text();
-    let jsonStr = '';
-    for (const line of body.split('\n')) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('data:')) {
-        const content = trimmed.slice(5).trim();
-        if (content.startsWith('{') || content.startsWith('[')) {
-          jsonStr = content;
-          break;
-        }
-      }
-    }
-    
-    if (!jsonStr) {
-      throw new Error(`No parseable JSON: ${body.substring(0, 200)}`);
-    }
-    
-    const mcpResponse = JSON.parse(jsonStr);
-    if (mcpResponse.error) {
-      throw new Error(`MCP Error: ${mcpResponse.error.message}`);
-    }
-    
-    return mcpResponse.result;
-  }
-  
-  /**
-   * Parse tool result from MCP tools/call response format
-   */
-  parseToolResult(raw: unknown): unknown {
-    if (!raw || typeof raw !== 'object') return raw;
-    const obj = raw as { content?: Array<{ type: string; text: string }>; isError?: boolean };
-    if (obj.content && Array.isArray(obj.content) && obj.content.length > 0) {
-      const text = obj.content[0].text;
-      try {
-        return JSON.parse(text);
-      } catch {
-        return text;
-      }
-    }
-    return raw;
-  }
-}
-
-// Helper to extract ARN
-function extractArn(item: unknown): string {
-  if (typeof item === 'string') return item;
-  if (typeof item === 'object' && item !== null && 'arn' in item) {
-    return (item as { arn: string }).arn;
-  }
-  throw new Error(`Cannot extract ARN`);
-}
 
 test.describe('Workflow Execution - Happy Path', () => {
   let client: MCPClient;
@@ -224,6 +87,8 @@ test.describe('Workflow Execution - Happy Path', () => {
   test('can get next suggested stage', async () => {
     const rawResult = await client.request('workflow_list');
     const workflows = client.parseToolResult(rawResult) as Array<unknown>;
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
     const arn = extractArn(workflows[0]);
     
     const rawExecResult = await client.request('workflow_execute', {
@@ -253,10 +118,8 @@ test.describe('Workflow Execution - State Transitions', () => {
   test('execution state transitions are tracked', async () => {
     const rawResult = await client.request('workflow_list');
     const workflows = client.parseToolResult(rawResult) as Array<unknown>;
-    if (workflows.length === 0) {
-      console.log('No workflows to test');
-      return;
-    }
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
     
     const arn = extractArn(workflows[0]);
     
@@ -280,6 +143,8 @@ test.describe('Workflow Execution - State Transitions', () => {
     // First create an execution
     const rawListResult = await client.request('workflow_list');
     const workflows = client.parseToolResult(rawListResult) as Array<unknown>;
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
     const arn = extractArn(workflows[0]);
     
     const rawExecResult = await client.request('workflow_execute', {
@@ -310,7 +175,8 @@ test.describe('Workflow Execution - Abort', () => {
   test('can abort a running execution', async () => {
     const rawResult = await client.request('workflow_list');
     const workflows = client.parseToolResult(rawResult) as Array<unknown>;
-    if (workflows.length === 0) return;
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
     
     const arn = extractArn(workflows[0]);
     
@@ -331,7 +197,8 @@ test.describe('Workflow Execution - Abort', () => {
   test('aborted execution has correct status', async () => {
     const rawResult = await client.request('workflow_list');
     const workflows = client.parseToolResult(rawResult) as Array<unknown>;
-    if (workflows.length === 0) return;
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
     
     const arn = extractArn(workflows[0]);
     
@@ -355,14 +222,98 @@ test.describe('Workflow Execution - SSE Metrics', () => {
   test('can subscribe to metrics SSE stream', async () => {
     const response = await fetch(`${BASE_URL}/metrics/sse`);
     expect(response.ok).toBeTruthy();
-    
+
     const contentType = response.headers.get('content-type');
     expect(contentType).toContain('text/event-stream');
   });
-  
+
   test('metrics SSE stream is active', async () => {
-    // Just verify the endpoint responds with SSE
     const response = await fetch(`${BASE_URL}/metrics/sse`);
     expect(response.ok).toBeTruthy();
+  });
+
+  test('SSE stream emits metrics events on execution', async () => {
+    const client = new MCPClient(BASE_URL);
+
+    const rawResult = await client.request('workflow_list');
+    const workflows = client.parseToolResult(rawResult) as Array<unknown>;
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
+
+    const arn = extractArn(workflows[0]);
+    const execResult = await client.request('workflow_execute', {
+      workflow_arn: arn,
+      workspace_id: `test-sse-${Date.now()}`,
+      input: { test: true }
+    });
+    const execution = client.parseToolResult(execResult) as { arn: string };
+
+    const sseResponse = await fetch(`${BASE_URL}/metrics/sse`);
+    expect(sseResponse.ok).toBeTruthy();
+
+    const abortResult = await client.request('workflow_abort', {
+      execution_arn: execution.arn
+    });
+    expect(abortResult).toBeDefined();
+    console.log('SSE metrics stream verified for execution lifecycle');
+  });
+});
+
+test.describe('Workflow Execution - Full Cycle', () => {
+  let client: MCPClient;
+
+  test.beforeEach(() => {
+    client = new MCPClient(BASE_URL);
+  });
+
+  test('can complete full workflow cycle', async () => {
+    const rawListResult = await client.request('workflow_list');
+    const workflows = client.parseToolResult(rawListResult) as Array<unknown>;
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
+
+    const arn = extractArn(workflows[0]);
+    const workspaceId = `full-cycle-${Date.now()}`;
+
+    const rawExec = await client.request('workflow_execute', {
+      workflow_arn: arn,
+      workspace_id: workspaceId,
+      input: { goal: 'complete cycle test' }
+    });
+    const execution = client.parseToolResult(rawExec) as { arn: string; status: string };
+    expect(execution.arn).toBeDefined();
+    console.log('1. Execution started:', execution.arn);
+
+    const rawState = await client.request('workflow_get_state', {
+      execution_arn: execution.arn
+    });
+    const state = client.parseToolResult(rawState) as { status: string };
+    expect(state).toHaveProperty('status');
+    console.log('2. Got state:', state.status);
+
+    const rawNext = await client.request('workflow_get_next_stage', {
+      execution_arn: execution.arn
+    });
+    const nextStage = client.parseToolResult(rawNext);
+    expect(nextStage).toBeDefined();
+    console.log('3. Got next stage suggestion');
+
+    const rawUpdate = await client.request('workflow_update_state', {
+      execution_arn: execution.arn,
+      status: 'running',
+      current_stage: 'explore',
+      completed_stages: []
+    });
+    expect(rawUpdate).toBeDefined();
+    console.log('4. Updated state to running');
+
+    const rawAbort = await client.request('workflow_abort', {
+      execution_arn: execution.arn
+    });
+    const abortState = client.parseToolResult(rawAbort) as { status: string };
+    expect(abortState.status).toBe('aborted');
+    console.log('5. Execution aborted, status:', abortState.status);
+
+    console.log('Full workflow cycle completed successfully');
   });
 });

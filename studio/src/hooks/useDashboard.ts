@@ -8,6 +8,7 @@ import { useDashboardStore } from '@/stores/dashboardStore';
 import { useMcpTools } from './useMcpTools';
 import { useExecutionApi } from './useExecutionApi';
 import type { AgentExecutionRow, WorkspaceStatus, HealthStrip } from '@/types';
+import { restApiUrl } from '@/lib/apiBase';
 
 export function useDashboard(projectId: string) {
   const { listWorkflows, loading } = useMcpTools();
@@ -27,7 +28,7 @@ export function useDashboard(projectId: string) {
   const fetchWorkspaces = useCallback(async () => {
     setLoadingWorkspaces(true);
     try {
-      const response = await fetch('/api/workspaces');
+      const response = await fetch(restApiUrl('/workspaces'));
       if (!response.ok) throw new Error(`API error: ${response.status}`);
       const data = await response.json() as { workspaces?: { id: string; name: string; description?: string }[] };
       const workspaces: WorkspaceStatus[] = (data?.workspaces ?? []).map((w) => ({

@@ -60,10 +60,9 @@ test.describe('MCP Protocol - Workflow Tools (8)', () => {
     const client = new MCPClient(BASE_URL);
     const rawResult = await client.request('workflow_list', {});
     const workflows = client.parseToolResult(rawResult) as Array<{ arn: string }>;
-    if (workflows.length === 0) {
-      console.log('No workflows to test');
-      return;
-    }
+
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
     
     const arn = workflows[0].arn;
     const rawDag = await client.request('workflow_get_dag', { arn });
@@ -76,10 +75,9 @@ test.describe('MCP Protocol - Workflow Tools (8)', () => {
     const client = new MCPClient(BASE_URL);
     const rawResult = await client.request('workflow_list', {});
     const workflows = client.parseToolResult(rawResult) as Array<{ arn: string }>;
-    if (workflows.length === 0) {
-      console.log('No workflows to test');
-      return;
-    }
+
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
     
     const arn = workflows[0].arn;
     const rawExecResult = await client.request('workflow_execute', {
@@ -98,10 +96,9 @@ test.describe('MCP Protocol - Workflow Tools (8)', () => {
     const client = new MCPClient(BASE_URL);
     const rawResult = await client.request('workflow_list', {});
     const workflows = client.parseToolResult(rawResult) as Array<{ arn: string }>;
-    if (workflows.length === 0) {
-      console.log('No workflows to test');
-      return;
-    }
+
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
     
     const arn = workflows[0].arn;
     const rawExecResult = await client.request('workflow_execute', {
@@ -118,15 +115,14 @@ test.describe('MCP Protocol - Workflow Tools (8)', () => {
     expect(state).toHaveProperty('status');
   });
   
-  test('workflow_update_state updates execution', async () => {
+  test('workflow_update_state updates execution and persists', async () => {
     const client = new MCPClient(BASE_URL);
     const rawResult = await client.request('workflow_list', {});
     const workflows = client.parseToolResult(rawResult) as Array<{ arn: string }>;
-    if (workflows.length === 0) {
-      console.log('No workflows to test');
-      return;
-    }
-    
+
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
+
     const arn = workflows[0].arn;
     const rawExecResult = await client.request('workflow_execute', {
       workflow_arn: arn,
@@ -134,26 +130,34 @@ test.describe('MCP Protocol - Workflow Tools (8)', () => {
       input: { goal: 'test' }
     });
     const execResult = client.parseToolResult(rawExecResult) as { arn: string };
-    
+
+    // Update state
     await client.request('workflow_update_state', {
       execution_arn: execResult.arn,
       status: 'running',
       current_stage: 'explore',
       completed_stages: ['explore']
     });
-    // No error means success
-    expect(true).toBeTruthy();
+
+    // FIX: Verify the change persisted by fetching state
+    const rawState = await client.request('workflow_get_state', {
+      execution_arn: execResult.arn,
+    });
+    const state = client.parseToolResult(rawState) as { status: string; current_stage: string; completed_stages: string[] };
+
+    expect(state.status).toBe('running');
+    expect(state.current_stage).toBe('explore');
+    expect(state.completed_stages).toContain('explore');
   });
   
   test('workflow_get_next_stage suggests next stage', async () => {
     const client = new MCPClient(BASE_URL);
     const rawResult = await client.request('workflow_list', {});
     const workflows = client.parseToolResult(rawResult) as Array<{ arn: string }>;
-    if (workflows.length === 0) {
-      console.log('No workflows to test');
-      return;
-    }
-    
+
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
+
     const arn = workflows[0].arn;
     const rawExecResult = await client.request('workflow_execute', {
       workflow_arn: arn,
@@ -173,10 +177,9 @@ test.describe('MCP Protocol - Workflow Tools (8)', () => {
     const client = new MCPClient(BASE_URL);
     const rawResult = await client.request('workflow_list', {});
     const workflows = client.parseToolResult(rawResult) as Array<{ arn: string }>;
-    if (workflows.length === 0) {
-      console.log('No workflows to test');
-      return;
-    }
+
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
     
     const arn = workflows[0].arn;
     const rawExecResult = await client.request('workflow_execute', {
@@ -202,7 +205,23 @@ test.describe('MCP Protocol - Agent Tools (3)', () => {
     expect(Array.isArray(result)).toBeTruthy();
     console.log(`Found ${result.length} agents`);
   });
-  
+
+  test('agent_get returns agent details', async () => {
+    const client = new MCPClient(BASE_URL);
+    const rawResult = await client.request('agent_list', {});
+    const agents = client.parseToolResult(rawResult) as Array<{ arn: string }>;
+    if (agents.length === 0) {
+      console.log('No agents to test');
+      return;
+    }
+
+    const arn = agents[0].arn;
+    const rawAgent = await client.request('agent_get', { arn });
+    const agent = client.parseToolResult(rawAgent);
+    expect(agent).toBeTruthy();
+    console.log('Got agent details');
+  });
+
   test('agent_query searches agents', async () => {
     const client = new MCPClient(BASE_URL);
     const rawResult = await client.request('agent_query', { query: 'orchestrator' });
@@ -219,7 +238,23 @@ test.describe('MCP Protocol - Skill Tools (3)', () => {
     expect(Array.isArray(result)).toBeTruthy();
     console.log(`Found ${result.length} skills`);
   });
-  
+
+  test('skill_get returns skill details', async () => {
+    const client = new MCPClient(BASE_URL);
+    const rawResult = await client.request('skill_list', {});
+    const skills = client.parseToolResult(rawResult) as Array<{ arn: string }>;
+    if (skills.length === 0) {
+      console.log('No skills to test');
+      return;
+    }
+
+    const arn = skills[0].arn;
+    const rawSkill = await client.request('skill_get', { arn });
+    const skill = client.parseToolResult(rawSkill);
+    expect(skill).toBeTruthy();
+    console.log('Got skill details');
+  });
+
   test('skill_query searches skills', async () => {
     const client = new MCPClient(BASE_URL);
     const rawResult = await client.request('skill_query', { query: 'sdd' });
@@ -236,6 +271,22 @@ test.describe('MCP Protocol - Prompt Tools (2)', () => {
     expect(Array.isArray(result)).toBeTruthy();
     console.log(`Found ${result.length} prompts`);
   });
+
+  test('prompt_get returns prompt details', async () => {
+    const client = new MCPClient(BASE_URL);
+    const rawResult = await client.request('prompt_list', {});
+    const prompts = client.parseToolResult(rawResult) as Array<{ arn: string }>;
+    if (prompts.length === 0) {
+      console.log('No prompts to test');
+      return;
+    }
+
+    const arn = prompts[0].arn;
+    const rawPrompt = await client.request('prompt_get', { arn });
+    const prompt = client.parseToolResult(rawPrompt);
+    expect(prompt).toBeTruthy();
+    console.log('Got prompt details');
+  });
 });
 
 test.describe('MCP Protocol - Execution Tools (3)', () => {
@@ -247,24 +298,47 @@ test.describe('MCP Protocol - Execution Tools (3)', () => {
     expect(result).toBeTruthy();
     console.log('Execution list result:', JSON.stringify(result, null, 2)?.substring(0, 200));
   });
-  
+
+  test('execution_get returns execution details', async () => {
+    const client = new MCPClient(BASE_URL);
+
+    // First create an execution to get a real ARN
+    const workflowsResult = await client.request('workflow_list', {});
+    const workflows = client.parseToolResult(workflowsResult) as Array<{ arn: string }>;
+
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
+
+    const execResult = await client.request('workflow_execute', {
+      workflow_arn: workflows[0].arn,
+      workspace_id: 'test-exec-get',
+      input: { test: true },
+    });
+    const execution = client.parseToolResult(execResult) as { arn: string };
+
+    const rawGet = await client.request('execution_get', {
+      execution_arn: execution.arn,
+    });
+    const fetched = client.parseToolResult(rawGet);
+    expect(fetched).toBeTruthy();
+    console.log('Got execution details:', JSON.stringify(fetched, null, 2)?.substring(0, 300));
+  });
+
   test('execution_history returns array', async () => {
     const client = new MCPClient(BASE_URL);
     // First create an execution to get a real ARN
     const workflowsResult = await client.request('workflow_list', {});
     const workflows = client.parseToolResult(workflowsResult) as Array<{ arn: string }>;
-    if (workflows.length === 0) {
-      console.log('No workflows to test');
-      return;
-    }
-    
+
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
+
     const execResult = await client.request('workflow_execute', {
       workflow_arn: workflows[0].arn,
       workspace_id: 'test-exec-history',
       input: { test: true }
     });
     const execution = client.parseToolResult(execResult) as { arn: string };
-    
+
     const rawHistory = await client.request('execution_history', {
       execution_arn: execution.arn,
       limit: 5
@@ -277,21 +351,19 @@ test.describe('MCP Protocol - Execution Tools (3)', () => {
 test.describe('MCP Protocol - Artifact Tools (3)', () => {
   test('artifact_create creates artifact', async () => {
     const client = new MCPClient(BASE_URL);
-    // First create an execution to get a real ARN
     const workflowsResult = await client.request('workflow_list', {});
     const workflows = client.parseToolResult(workflowsResult) as Array<{ arn: string }>;
-    if (workflows.length === 0) {
-      console.log('No workflows to test');
-      return;
-    }
-    
+
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
+
     const execResult = await client.request('workflow_execute', {
       workflow_arn: workflows[0].arn,
       workspace_id: 'test-artifact',
       input: { test: true }
     });
     const execution = client.parseToolResult(execResult) as { arn: string };
-    
+
     const rawResult = await client.request('artifact_create', {
       execution_arn: execution.arn,
       name: 'test-report.md',
@@ -304,7 +376,37 @@ test.describe('MCP Protocol - Artifact Tools (3)', () => {
     expect(result).toHaveProperty('name');
     console.log('Created artifact:', result.arn);
   });
-  
+
+  test('artifact_get returns artifact', async () => {
+    const client = new MCPClient(BASE_URL);
+    const workflowsResult = await client.request('workflow_list', {});
+    const workflows = client.parseToolResult(workflowsResult) as Array<{ arn: string }>;
+
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
+
+    const execResult = await client.request('workflow_execute', {
+      workflow_arn: workflows[0].arn,
+      workspace_id: 'test-artifact-get',
+      input: { test: true }
+    });
+    const execution = client.parseToolResult(execResult) as { arn: string };
+
+    const createResult = await client.request('artifact_create', {
+      execution_arn: execution.arn,
+      name: 'test-get.md',
+      content: '# Test\n\nContent',
+      content_type: 'text/markdown',
+      stage_id: 'explore'
+    });
+    const artifact = client.parseToolResult(createResult) as { arn: string };
+
+    const rawArtifact = await client.request('artifact_get', { arn: artifact.arn });
+    const result = client.parseToolResult(rawArtifact);
+    expect(result).toBeTruthy();
+    console.log('Got artifact by ARN');
+  });
+
   test('artifact_list returns array', async () => {
     const client = new MCPClient(BASE_URL);
     const rawResult = await client.request('artifact_list', { limit: 5 });
@@ -320,10 +422,9 @@ test.describe('MCP Protocol - Insights Tools (2)', () => {
     // First create an execution to get a real ARN
     const workflowsResult = await client.request('workflow_list', {});
     const workflows = client.parseToolResult(workflowsResult) as Array<{ arn: string }>;
-    if (workflows.length === 0) {
-      console.log('No workflows to test');
-      return;
-    }
+
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
     
     const execResult = await client.request('workflow_execute', {
       workflow_arn: workflows[0].arn,
@@ -359,10 +460,9 @@ test.describe('MCP Protocol - Metrics Tools (2)', () => {
     // First create an execution to get a real ARN
     const workflowsResult = await client.request('workflow_list', {});
     const workflows = client.parseToolResult(workflowsResult) as Array<{ arn: string }>;
-    if (workflows.length === 0) {
-      console.log('No workflows to test');
-      return;
-    }
+
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
     
     const execResult = await client.request('workflow_execute', {
       workflow_arn: workflows[0].arn,
@@ -384,10 +484,9 @@ test.describe('MCP Protocol - Metrics Tools (2)', () => {
     // First create an execution to get a real ARN
     const workflowsResult = await client.request('workflow_list', {});
     const workflows = client.parseToolResult(workflowsResult) as Array<{ arn: string }>;
-    if (workflows.length === 0) {
-      console.log('No workflows to test');
-      return;
-    }
+
+    // FIX: Do NOT skip — fail if no workflows exist
+    expect(workflows.length, 'At least one workflow must exist for this test').toBeGreaterThan(0);
     
     const execResult = await client.request('workflow_execute', {
       workflow_arn: workflows[0].arn,

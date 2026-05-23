@@ -5,8 +5,9 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { restApiUrl } from '@/lib/apiBase';
 
-const API = '/api';
+const API = restApiUrl('');
 
 export interface Workspace {
   id: string;

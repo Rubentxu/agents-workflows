@@ -18,6 +18,8 @@ workflow = { path = "../workflow" }
 artifact = { path = "../artifact" }
 metrics = { path = "../metrics" }
 insights = { path = "../insights" }
+schema = { path = "../schema" }
+validation = { path = "../validation" }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -45,6 +47,7 @@ mime_guess = "2.0"
 clap = { version = "4", features = ["derive"] }
 shellexpand = "3"
 serde_yaml = "0.9"
+schemars.workspace = true
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }

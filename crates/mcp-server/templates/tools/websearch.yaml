@@ -1,0 +1,17 @@
+arn: arn:local:global:tool/websearch
+name: websearch
+description: "Search the web using AI-powered search"
+source: "builtin://websearch"
+source_type: "builtin"
+category: "web"
+input_schema:
+  type: object
+  properties:
+    query:
+      type: string
+      description: "Search query string"
+  required:
+    - query
+tags:
+  - "web"
+  - "search"

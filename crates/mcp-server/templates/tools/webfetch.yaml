@@ -1,0 +1,24 @@
+arn: arn:local:global:tool/webfetch
+name: webfetch
+description: "Fetch content from a specified URL"
+source: "builtin://webfetch"
+source_type: "builtin"
+category: "web"
+input_schema:
+  type: object
+  properties:
+    url:
+      type: string
+      description: "Fully-formed URL to fetch from"
+    format:
+      type: string
+      description: "Output format (markdown, text, html)"
+    timeout:
+      type: number
+      description: "Optional timeout in seconds (max 120)"
+  required:
+    - url
+tags:
+  - "web"
+  - "fetch"
+  - "http"

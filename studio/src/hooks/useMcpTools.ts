@@ -9,6 +9,7 @@ import { useRegistryCacheStore } from '@/stores/registryCacheStore';
 import { useWorkflowEditorStore } from '@/stores/workflowEditorStore';
 import { useExecutionStore } from '@/stores/executionStore';
 import { mcpRequest, parseToolResult, arnToTool } from '@/hooks/mcpClient';
+import { restApiUrl } from '@/lib/apiBase';
 import type { Workflow, RegistryNode, ExecutionPlan } from '@/types';
 
 export function useMcpTools() {
@@ -18,6 +19,32 @@ export function useMcpTools() {
   const setWorkflow = useWorkflowEditorStore((state) => state.setWorkflow);
   const setExecutionPlan = useExecutionStore((state) => state.setExecutionPlan);
 
+  const fetchRegistryList = useCallback(async (resourceType: 'tool' | 'template'): Promise<RegistryNode[]> => {
+    const response = await fetch(restApiUrl(`/${resourceType}s`));
+    if (!response.ok) {
+      throw new Error(`Failed to list ${resourceType}s: HTTP ${response.status}`);
+    }
+
+    const data = await response.json() as Record<string, Array<{
+      id: string;
+      name: string;
+      namespace?: string;
+      created_at?: string;
+      updated_at?: string;
+    }>>;
+
+    const rows = data[`${resourceType}s`] ?? [];
+    return rows.map((row) => ({
+      id: row.id,
+      type: resourceType,
+      name: row.name,
+      registry: 'local',
+      namespace: row.namespace ?? 'global',
+      created_at: row.created_at ?? new Date(0).toISOString(),
+      updated_at: row.updated_at ?? row.created_at ?? new Date(0).toISOString(),
+    }));
+  }, []);
+
   /**
    * List all workflows from registry.
    */
@@ -26,7 +53,7 @@ export function useMcpTools() {
     setError(null);
     try {
       const result = await mcpRequest('tools/call', {
-        name: 'list_workflows',
+        name: 'workflow_list',
         arguments: {},
       }) as { content: { text: string }[] };
       const nodes = parseToolResult(result) as RegistryNode[];
@@ -49,7 +76,7 @@ export function useMcpTools() {
     setError(null);
     try {
       const result = await mcpRequest('tools/call', {
-        name: 'get_workflow',
+        name: 'workflow_get',
         arguments: { arn },
       }) as { content: { text: string }[] };
       const workflow = parseToolResult(result, '{}') as Workflow;
@@ -208,6 +235,40 @@ export function useMcpTools() {
     }
   }, []);
 
+  /**
+   * List all tools via Studio REST while MCP tool discovery catches up.
+   */
+  const listTools = useCallback(async (): Promise<RegistryNode[]> => {
+    setLoading(true);
+    setError(null);
+    try {
+      return await fetchRegistryList('tool');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to list tools';
+      setError(message);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchRegistryList]);
+
+  /**
+   * List all templates via Studio REST while MCP tool discovery catches up.
+   */
+  const listTemplates = useCallback(async (): Promise<RegistryNode[]> => {
+    setLoading(true);
+    setError(null);
+    try {
+      return await fetchRegistryList('template');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to list templates';
+      setError(message);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchRegistryList]);
+
   return {
     loading,
     error,
@@ -219,5 +280,7 @@ export function useMcpTools() {
     listAgents,
     listSkills,
     listPrompts,
+    listTools,
+    listTemplates,
   };
 }

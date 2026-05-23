@@ -18,14 +18,16 @@ const STATUS_BADGE_STYLES: Record<string, { bg: string; color: string }> = {
   pending: { bg: 'var(--color-warning-container)', color: 'var(--color-on-warning-container)' },
   completed: { bg: 'var(--color-success-container)', color: 'var(--color-on-success-container)' },
   failed: { bg: 'var(--color-error-container)', color: 'var(--color-on-error-container)' },
+  aborted: { bg: 'var(--color-secondary-container)', color: 'var(--color-on-secondary-container)' },
+  paused: { bg: 'var(--color-tertiary-container)', color: 'var(--color-on-tertiary-container)' },
   cancelled: { bg: 'var(--color-secondary-container)', color: 'var(--color-on-secondary-container)' },
 };
 
-const WS_STATUS_STYLES: Record<string, { bg: string; label: string }> = {
-  healthy: { bg: 'var(--color-success)', label: 'Healthy' },
-  degraded: { bg: 'var(--color-warning)', label: 'Degraded' },
-  failing: { bg: 'var(--color-error)', label: 'Failing' },
-  idle: { bg: 'var(--color-secondary)', label: 'Idle' },
+const WS_STATUS_STYLES: Record<string, { bg: string; color: string; label: string }> = {
+  healthy: { bg: 'var(--color-success-container)', color: 'var(--color-on-success-container)', label: 'Healthy' },
+  degraded: { bg: 'var(--color-warning-container)', color: 'var(--color-on-warning-container)', label: 'Degraded' },
+  failing: { bg: 'var(--color-error-container)', color: 'var(--color-on-error-container)', label: 'Failing' },
+  idle: { bg: 'var(--color-secondary-container)', color: 'var(--color-on-secondary-container)', label: 'Idle' },
 };
 
 export function ProjectDashboardPage() {
@@ -117,7 +119,7 @@ export function ProjectDashboardPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="project-dashboard">
       <DashboardHeader
         projectName={projectId ?? 'Project'}
         projectId={projectId ?? ''}
@@ -128,7 +130,7 @@ export function ProjectDashboardPage() {
         activeWorkspaceName={activeWorkspace?.name}
       />
 
-      <section aria-labelledby="kpi-summary-title">
+      <section aria-labelledby="kpi-summary-title" data-testid="dashboard-kpi-section">
         <h2 id="kpi-summary-title" className="sr-only">Operational summary</h2>
         {loading ? (
           <LoadingState type="cards" count={7} />
@@ -186,7 +188,7 @@ function DashboardHeader({
   activeWorkspaceName?: string;
 }) {
   return (
-    <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" data-testid="dashboard-header">
       <div>
         <h1
           className="text-xl font-semibold"
@@ -209,6 +211,7 @@ function DashboardHeader({
         <button
           onClick={onRefresh}
           disabled={loading}
+          data-testid="dashboard-refresh"
           className="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
           style={{
             border: '1px solid var(--color-outline)',
@@ -223,6 +226,7 @@ function DashboardHeader({
           Refresh
         </button>
         <button
+          data-testid="dashboard-create-workflow"
           className="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
           style={{
             background: 'var(--color-primary)',
@@ -288,6 +292,7 @@ function WorkspacesPanel({
             Workspaces
           </h2>
           <button
+            data-testid="dashboard-create-workspace"
             className="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
             style={{
               background: 'var(--color-primary-container)',
@@ -309,13 +314,14 @@ function WorkspacesPanel({
           <LoadingState type="cards" count={3} />
         ) : workspaces.length === 0 ? (
           <EmptyState
+            testId="dashboard-workspaces-empty"
             icon={<WsIcon />}
             title="No workspaces yet"
             description="Create a workspace to start organizing agentic workflows."
             action={{ label: 'Create Workspace', onClick: () => {} }}
           />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" data-testid="dashboard-workspaces-grid">
             {workspaces.map((ws) => (
               <WorkspaceCard key={ws.id} workspace={ws} />
             ))}
@@ -348,7 +354,7 @@ function WorkspaceCard({ workspace }: { workspace: WorkspaceStatus }) {
           className="text-xs px-2 py-0.5 rounded-full font-medium"
           style={{
             background: statusStyle.bg,
-            color: 'var(--color-on-primary)',
+            color: statusStyle.color,
           }}
         >
           {statusStyle.label}
@@ -403,6 +409,7 @@ function RecentExecutionsPanel({
           </h2>
           {executions.length > 0 && (
             <button
+              data-testid="dashboard-view-all-executions"
               className="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
               style={{
                 border: '1px solid var(--color-outline)',
@@ -426,13 +433,14 @@ function RecentExecutionsPanel({
           <LoadingState type="rows" count={5} />
         ) : executions.length === 0 ? (
           <EmptyState
+            testId="dashboard-executions-empty"
             icon={<ExecIcon />}
             title="No agent executions yet"
             description="Agent executions will appear here once they are run."
             action={{ label: 'View Agent Executions', onClick: () => {} }}
           />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" data-testid="dashboard-executions-table">
             <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--color-outline-variant)' }}>
@@ -469,11 +477,12 @@ function ThCell({ children }: { children: React.ReactNode }) {
 }
 
 function ExecutionRow({ exec }: { exec: AgentExecutionRow }) {
-  const badge = STATUS_BADGE_STYLES[exec.status] ?? STATUS_BADGE_STYLES.cancelled;
+  const badge = STATUS_BADGE_STYLES[exec.status] ?? STATUS_BADGE_STYLES.aborted;
   const duration = exec.durationMs != null ? `${(exec.durationMs / 1000).toFixed(1)}s` : '--';
 
   return (
     <tr
+      data-testid={`dashboard-execution-row-${exec.id}`}
       className="transition-colors"
       style={{ borderBottom: '1px solid var(--color-outline-variant)' }}
       onMouseEnter={(e) => {
@@ -487,7 +496,7 @@ function ExecutionRow({ exec }: { exec: AgentExecutionRow }) {
         className="px-4 py-2.5 font-mono text-xs truncate max-w-32"
         style={{ color: 'var(--color-on-surface)' }}
       >
-        {exec.id.length > 12 ? exec.id.slice(0, 12) : exec.id}
+        {(exec.id ?? '').length > 12 ? (exec.id ?? '').slice(0, 12) : (exec.id ?? '--')}
       </td>
       <td
         className="px-4 py-2.5 font-mono text-xs truncate max-w-32"
@@ -574,13 +583,14 @@ function WorkflowCatalogPanel({
           <LoadingState type="cards" count={3} />
         ) : workflows.length === 0 ? (
           <EmptyState
+            testId="dashboard-workflows-empty"
             icon={<WorkflowIcon />}
             title="No workflows found"
             description="Create your first workflow to get started."
             action={{ label: 'Create Workflow', onClick: () => {} }}
           />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="dashboard-workflows-grid">
             {workflows.map((wf) => (
               <WorkflowCatalogCard key={wf.id} workflow={wf} projectId={projectId} />
             ))}

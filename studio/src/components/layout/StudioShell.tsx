@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { Outlet } from 'react-router-dom';
 import { TopBar } from './TopBar';
-import { Sidebar } from './Sidebar';
 import { useTheme } from '@/hooks/useTheme';
 
 interface ShellContextValue {
@@ -53,7 +52,6 @@ export function StudioShell() {
         className={`app-shell${sidebarCollapsed ? ' app-shell--collapsed' : ''}`}
       >
         <TopBar />
-        <Sidebar />
         {mobileMenuOpen && (
           <div
             className="app-shell__sidebar-overlay app-shell__sidebar-overlay--visible"

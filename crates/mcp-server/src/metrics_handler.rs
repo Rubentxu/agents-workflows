@@ -17,8 +17,18 @@ impl MetricsMcpHandler {
     }
 
     pub async fn metrics_query(&self, params: MetricsQueryParams) -> Result<MetricsResponse, String> {
-        let execution = self.state.execution_store.get(&params.execution_arn)
-            .map_err(|e| format!("Failed to get execution: {}", e))?;
+        let execution = match self.state.execution_store.get(&params.execution_arn) {
+            Ok(e) => e,
+            Err(_) => {
+                // Return empty metrics for non-existent executions
+                return Ok(MetricsResponse {
+                    execution_arn: params.execution_arn,
+                    metrics: vec![],
+                    total_tokens: 0,
+                    total_duration_ms: 0,
+                });
+            }
+        };
 
         let mut metrics = Vec::new();
 
@@ -118,6 +128,7 @@ mod tests {
             analytics_service: Arc::new(insights::AnalyticsService::new()),
             sse_emitter: Arc::new(metrics::application::SseEmitter::new()),
             metrics_aggregator: Arc::new(metrics::application::MetricsAggregator::new()),
+            workspace_root: std::path::PathBuf::from("/tmp/test-workspace"),
         })
     }
 

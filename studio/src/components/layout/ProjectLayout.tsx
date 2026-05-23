@@ -16,7 +16,7 @@ export function ProjectLayout() {
   return (
     <>
       <Sidebar activeSection={activeSection} projectId={projectId} />
-      <main role="main" style={{ flex: 1, overflow: 'auto' }}>
+      <main role="main" className="app-shell__project-main">
         <Outlet />
       </main>
     </>

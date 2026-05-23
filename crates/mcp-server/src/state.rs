@@ -25,23 +25,26 @@ pub struct AppState {
     pub analytics_service: Arc<AnalyticsService>,
     pub sse_emitter: Arc<SseEmitter>,
     pub metrics_aggregator: Arc<MetricsAggregator>,
+    pub workspace_root: PathBuf,
 }
 
 impl AppState {
     /// Initialize application state with workspace directory
     pub async fn new(workspace_dir: &str) -> Result<Self> {
+        let workspace_root = PathBuf::from(workspace_dir);
+
         // Create global directory if it doesn't exist
-        let global_dir = format!("{}/global", workspace_dir);
+        let global_dir = workspace_root.join("global");
         std::fs::create_dir_all(&global_dir).ok(); // idempotent
 
         // Create artifacts directory
-        let artifacts_dir = format!("{}/artifacts", workspace_dir);
+        let artifacts_dir = workspace_root.join("artifacts");
         std::fs::create_dir_all(&artifacts_dir).ok(); // idempotent
 
         // Open database in workspace global directory
-        let db_path = format!("{}/global/registry.db", workspace_dir);
+        let db_path = global_dir.join("registry.db");
 
-        let db = Arc::new(Database::open(&db_path)?);
+        let db = Arc::new(Database::open(db_path.to_str().unwrap_or_default())?);
 
         // Create repository and service
         let repository = Arc::new(SqliteNodeRepository::new(db.clone()));
@@ -50,7 +53,7 @@ impl AppState {
         let artifact_store = Arc::new(ArtifactStore::new(db.clone()));
 
         // Create artifact service with workspace artifacts directory
-        let artifact_service = Arc::new(ArtifactService::new(PathBuf::from(artifacts_dir)));
+        let artifact_service = Arc::new(ArtifactService::new(artifacts_dir));
 
         // Create insights analytics service
         let analytics_service = Arc::new(AnalyticsService::new());
@@ -59,7 +62,53 @@ impl AppState {
         let sse_emitter = Arc::new(SseEmitter::new());
         let metrics_aggregator = Arc::new(MetricsAggregator::new());
 
-        Ok(Self { node_service, db, execution_store, artifact_store, artifact_service, analytics_service, sse_emitter, metrics_aggregator })
+        Ok(Self { node_service, db, execution_store, artifact_store, artifact_service, analytics_service, sse_emitter, metrics_aggregator, workspace_root })
+    }
+
+    /// Get the file path for a resource ARN (ADR-0016)
+    /// Returns None if the ARN doesn't map to a file path
+    pub fn get_content_path(&self, arn: &str) -> Option<PathBuf> {
+        // ARN format: arn:local:{scope}:{type}/{name}
+        // Example: arn:local:global:workflow/my-workflow
+        let parts: Vec<&str> = arn.split(':').collect();
+        if parts.len() < 6 {
+            return None;
+        }
+
+        let scope = parts[2]; // "global" or "workspace/{id}"
+        let resource_type = parts[3];
+        let name = parts[4..].join("/"); // Name may contain colons
+
+        let base_dir = if scope == "global" {
+            self.workspace_root.join("global")
+        } else if scope.starts_with("workspace/") {
+            let workspace_id = scope.strip_prefix("workspace/").unwrap_or("");
+            self.workspace_root.join("workspaces").join(workspace_id)
+        } else {
+            return None;
+        };
+
+        let type_dir = match resource_type {
+            "workflow" => base_dir.join("workflows"),
+            "agent" => base_dir.join("agents"),
+            "skill" => base_dir.join("skills").join(&name).join("SKILL.md"),
+            "prompt" => base_dir.join("prompts").join(format!("{}.md", name)),
+            "tool" => base_dir.join("tools"),
+            "template" => base_dir.join("templates").join(format!("{}.md", name)),
+            _ => return None,
+        };
+
+        // For skills, the path is already computed above
+        if resource_type == "skill" {
+            return Some(type_dir);
+        }
+
+        // For YAML-based resources, append .yaml
+        if resource_type == "workflow" || resource_type == "agent" || resource_type == "tool" {
+            Some(type_dir.join(format!("{}.yaml", name)))
+        } else {
+            Some(type_dir)
+        }
     }
 
     /// List all workflows from registry

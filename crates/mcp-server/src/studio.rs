@@ -73,28 +73,42 @@ pub fn create_studio_router() -> Router {
         .route("/*path", axum::routing::get(studio_handler))
         .route("/", axum::routing::get(studio_index_handler))
         .route("/studio", axum::routing::get(studio_index_handler))
+        .route("/studio/", axum::routing::get(studio_index_handler))
 }
 
 #[cfg(not(feature = "embedded-studio"))]
 pub fn create_studio_router() -> Router {
     let studio_path = get_studio_path();
     Router::new()
-        .route("/*path", axum::routing::get(studio_handler))
+        // Specific routes first so they are matched before the wildcard
         .route("/", axum::routing::get(studio_index_handler))
         .route("/studio", axum::routing::get(studio_index_handler))
+        .route("/studio/", axum::routing::get(studio_index_handler))
+        // Wildcard last — captures all other /studio/* paths for SPA routing
+        .route("/*path", axum::routing::get(studio_handler))
         .with_state(studio_path)
 }
 
 #[cfg(feature = "embedded-studio")]
 async fn studio_handler(path: axum::extract::Path<String>) -> Response {
-    embedded::serve_file(&path)
-        .unwrap_or_else(|| {
-            Response::builder()
-                .status(404)
-                .header(header::CONTENT_TYPE, "text/plain")
-                .body(Body::from("Not found"))
-                .unwrap()
-        })
+    // First try to serve the file directly
+    if let Some(response) = embedded::serve_file(&path) {
+        return response;
+    }
+
+    // For SPA routing: if path starts with "studio/" or is a known studio route,
+    // fall back to index.html
+    let path_str = path.trim_start_matches('/');
+    if path_str.starts_with("studio/") || path_str == "studio" || path_str.starts_with("projects/") {
+        return embedded::serve_index();
+    }
+
+    // File not found and not a studio route
+    Response::builder()
+        .status(404)
+        .header(header::CONTENT_TYPE, "text/plain")
+        .body(Body::from("Not found"))
+        .unwrap()
 }
 
 #[cfg(feature = "embedded-studio")]
@@ -113,6 +127,8 @@ mod filesystem {
 
     pub fn serve_file(path: &str, studio_path: &Path) -> Option<Response> {
         let path = path.trim_start_matches('/');
+        // Strip "studio/" prefix since studio_path already points to studio/dist
+        let path = path.strip_prefix("studio/").unwrap_or(path);
         let file_path = if path.is_empty() || path == "studio" {
             studio_path.join("index.html")
         } else {
@@ -159,14 +175,24 @@ async fn studio_handler(
     path: axum::extract::Path<String>,
     axum::extract::State(studio_path): axum::extract::State<std::path::PathBuf>,
 ) -> Response {
-    filesystem::serve_file(&path, &studio_path)
-        .unwrap_or_else(|| {
-            Response::builder()
-                .status(404)
-                .header(header::CONTENT_TYPE, "text/plain")
-                .body(Body::from("Not found"))
-                .unwrap()
-        })
+    // First try to serve the file directly
+    if let Some(response) = filesystem::serve_file(&path, &studio_path) {
+        return response;
+    }
+
+    // For SPA routing: if path starts with "studio/" or is a known studio route,
+    // fall back to index.html
+    let path_str = path.trim_start_matches('/');
+    if path_str.starts_with("studio/") || path_str == "studio" || path_str.starts_with("projects/") {
+        return filesystem::serve_index(&studio_path);
+    }
+
+    // File not found and not a studio route
+    Response::builder()
+        .status(404)
+        .header(header::CONTENT_TYPE, "text/plain")
+        .body(Body::from("Not found"))
+        .unwrap()
 }
 
 #[cfg(not(feature = "embedded-studio"))]

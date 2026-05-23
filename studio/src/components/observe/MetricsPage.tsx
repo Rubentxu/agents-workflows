@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAllMetricsStream } from '@/hooks/useMetricsStream';
 import { useMetricsStore, type AggregatedMetrics } from '@/stores/metricsStore';
+import { restApiUrl } from '@/lib/apiBase';
 
 type MetricTab = 'executions' | 'workflows' | 'agents' | 'resources' | 'system';
 type TimeWindow = '1h' | '24h' | '7d' | '30d';
@@ -528,7 +529,7 @@ function SystemTab() {
   useEffect(() => {
     async function fetchHealth() {
       try {
-        const res = await fetch('/api/health');
+        const res = await fetch(restApiUrl('/health'));
         if (res.ok) {
           setHealth(await res.json() as HealthStatus);
         }

@@ -1,0 +1,26 @@
+arn: arn:local:global:tool/todowrite
+name: todowrite
+description: "Create and maintain a structured task list for the current session"
+source: "builtin://todowrite"
+source_type: "builtin"
+category: "core"
+input_schema:
+  type: object
+  properties:
+    todos:
+      type: array
+      items:
+        type: object
+        properties:
+          content:
+            type: string
+          status:
+            type: string
+          priority:
+            type: string
+  required:
+    - todos
+tags:
+  - "todo"
+  - "task"
+  - "tracking"

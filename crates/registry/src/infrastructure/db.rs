@@ -11,6 +11,8 @@ pub struct Database {
 impl Database {
     pub fn open(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
+        // Enable WAL mode for better concurrency: allows concurrent reads during writes
+        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         let db = Self {
             _path: path.to_string(),
             connection: Mutex::new(conn),

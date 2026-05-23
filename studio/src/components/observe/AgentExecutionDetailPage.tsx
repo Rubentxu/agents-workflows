@@ -50,6 +50,8 @@ const STATUS_DOT_COLORS: Record<string, string> = {
   failed: 'var(--color-error)',
   running: 'var(--color-info)',
   pending: 'var(--color-warning)',
+  aborted: 'var(--color-secondary)',
+  paused: 'var(--color-tertiary)',
   skipped: 'var(--color-secondary)',
 };
 
@@ -193,9 +195,10 @@ export function AgentExecutionDetailPage() {
     STATUS_DOT_COLORS[status] ?? STATUS_DOT_COLORS.skipped;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" data-testid="execution-detail">
       <div
         className="flex items-center justify-between px-6 py-3"
+        data-testid="execution-detail-header"
         style={{
           borderBottom: '1px solid var(--color-outline-variant)',
           background: 'var(--color-surface-container-low)',
@@ -204,6 +207,7 @@ export function AgentExecutionDetailPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate(`/studio/projects/${projectId}/observe/agent-executions`)}
+            data-testid="execution-detail-back"
             className="text-sm transition-colors"
             style={{ color: 'var(--color-secondary)' }}
           >
@@ -268,6 +272,7 @@ export function AgentExecutionDetailPage() {
 
       <div
         className="flex px-6 overflow-x-auto"
+        data-testid="execution-detail-tabs"
         style={{
           borderBottom: '1px solid var(--color-outline-variant)',
           background: 'var(--color-surface-container-low)',
@@ -277,6 +282,7 @@ export function AgentExecutionDetailPage() {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
+            data-testid={`execution-detail-tab-${tab}`}
             className="px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
             style={{
               borderBottomColor: activeTab === tab ? 'var(--color-primary)' : 'transparent',
@@ -288,7 +294,7 @@ export function AgentExecutionDetailPage() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" data-testid="execution-detail-content">
         {activeTab === 'overview' && execution && (
           <div className="p-6 space-y-6">
             <div className="grid grid-cols-3 gap-4">

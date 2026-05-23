@@ -39,8 +39,51 @@ arn:local:workspace/abc123:artifact/execution-456/spec
 
 | Scope | Resources | Visibility |
 |-------|-----------|------------|
-| `global` | skills, agents, prompts, workflows | All workspaces share |
-| `workspace/{id}` | artifacts, executions, custom workflows | Workspace-isolated |
+| `global` | skills, agents, prompts, workflows, tools, templates | All workspaces share |
+| `workspace/{id}` | ALL resource types (agents, skills, prompts, workflows, tools, templates, artifacts, executions) | Workspace-isolated |
+
+**Updated 2026-05-21:** Workspace scope now supports ALL resource types, not just artifacts/executions. This enables workspace-specific overrides of global resources and workspace-local resources. Each workspace has its own `registry.db` (SQLite cache) and directory tree. The application accesses both the global registry and the active workspace's registry.
+
+### Filesystem Layout
+
+```
+~/.workflows/                          ← workspace_root
+├── global/                            ← shared scope (all workspaces)
+│   ├── registry.db                    ← SQLite cache (index, not source of truth)
+│   ├── agents/
+│   │   └── orchestrator.yaml          ← YAML source of truth
+│   ├── skills/
+│   │   └── sdd-explore/
+│   │       └── SKILL.md               ← Markdown + YAML frontmatter
+│   ├── prompts/
+│   │   └── sdd-orchestrator.md
+│   ├── templates/
+│   │   └── sdd-exploration-output.md
+│   ├── tools/
+│   │   └── bash.yaml
+│   └── workflows/
+│       └── sdd-full.yaml
+│
+├── workspaces/                        ← scoped workspaces
+│   └── {workspace-id}/
+│       ├── registry.db               ← workspace-scoped SQLite cache
+│       ├── agents/                    ← workspace-scoped agents/overrides
+│       ├── skills/
+│       ├── prompts/
+│       ├── templates/
+│       ├── tools/
+│       ├── workflows/
+│       └── artifacts/
+```
+
+### Source of Truth Model
+
+Files in the filesystem are the **source of truth**. SQLite databases are **caches/indices** derived from file content. This follows the Kubernetes pattern (YAML files → etcd cache).
+
+- **Read flow:** File → parse → index in SQLite → serve via REST API
+- **Write flow:** REST API → write file → re-index in SQLite
+- **On startup:** `register_resources_to_db()` rebuilds the SQLite cache from files
+- **Editors (Monaco):** Read/write file content directly via REST API that serves file content
 
 ### Components
 

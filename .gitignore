@@ -12,6 +12,11 @@ studio/tsconfig.tsbuildinfo
 tests/node_modules/
 tests/test-results/
 tests/playwright-report/
+/test-results/
+/playwright-report/
+tests/e2e/functional-audit/
+tests/e2e/*.spec.ts-snapshots/
+tests/e2e/baselines/
 tests/**/*.pyc
 tests/**/__pycache__/
 
@@ -35,3 +40,4 @@ Thumbs.db
 
 # Runtime data
 .workflows/
+.workflows-parallel/

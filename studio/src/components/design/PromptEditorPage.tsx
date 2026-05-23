@@ -1,73 +1,499 @@
 /**
  * PromptEditorPage — /studio/projects/:projectId/design/prompts/:promptId/editor
+ * Full-page prompt editor with the unified Prompt data model (ADR-0012).
+ * Manages: configuration, content, template reference, and YAML preview.
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useMcpTools } from '@/hooks/useMcpTools';
-import { useResourceApi } from '@/hooks/useResourceApi';
+import { restApiUrl } from '@/lib/apiBase';
+import { EditorLayout, FormField, ArnSelector } from './shared';
+import { MarkdownResourceEditor } from '@/components/monaco';
+
+// ============================================================================
+// Tab definitions
+// ============================================================================
+
+type TabId = 'config' | 'content' | 'template' | 'yaml';
+
+const TABS: { key: string; label: string }[] = [
+  { key: 'config', label: 'Configuration' },
+  { key: 'content', label: 'Content' },
+  { key: 'template', label: 'Template' },
+  { key: 'yaml', label: 'YAML Preview' },
+];
+
+// ============================================================================
+// Prompt data model
+// ============================================================================
+
+type PromptKind = 'system' | 'user' | 'template';
+
+interface PromptData {
+  id: string;
+  name: string;
+  namespace: string;
+  scope: string;
+  config: string;
+}
+
+// ============================================================================
+// Variable detection
+// ============================================================================
+
+interface DetectedVariable {
+  name: string;
+  type: string;
+}
+
+function detectVariables(content: string): DetectedVariable[] {
+  const regex = /\{\{(#if\s+|#each\s+)?(\w+)\}\}/g;
+  const variables: DetectedVariable[] = [];
+  const seen = new Set<string>();
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    const name = match[2];
+    if (seen.has(name)) continue;
+    seen.add(name);
+
+    // Infer type from context
+    let type = 'string';
+    const afterMatch = content.substring(match.index + match[0].length);
+    if (match[1] === '#if') {
+      type = 'boolean';
+    } else if (match[1] === '#each') {
+      type = 'array';
+    } else if (afterMatch.includes('| length') || afterMatch.includes('| size')) {
+      type = 'number';
+    }
+
+    variables.push({ name, type });
+  }
+
+  return variables;
+}
+
+// ============================================================================
+// YAML spec extraction utility
+// ============================================================================
+
+function extractYamlSpec(config: string): Record<string, unknown> {
+  const spec: Record<string, unknown> = {};
+  const lines = config.split('\n');
+
+  for (const line of lines) {
+    const match = line.match(/^(\w+):\s*(.*)$/);
+    if (!match) continue;
+
+    const [, key, rawValue] = match;
+    const value = rawValue.trim();
+
+    let parsedValue: unknown = value;
+    if (value === '' || value === '~' || value === 'null') {
+      parsedValue = null;
+    } else if (value === 'true') {
+      parsedValue = true;
+    } else if (value === 'false') {
+      parsedValue = false;
+    } else if (!isNaN(Number(value)) && value !== '') {
+      parsedValue = Number(value);
+    } else if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      parsedValue = value.slice(1, -1);
+    }
+
+    const parts = key.split('.');
+    if (parts.length === 2 && parts[0] === 'spec') {
+      spec[parts[1]] = parsedValue;
+    } else if (parts.length === 1) {
+      spec[key] = parsedValue;
+    }
+  }
+
+  return spec;
+}
+
+// ============================================================================
+// Main component
+// ============================================================================
 
 export function PromptEditorPage() {
   const { projectId, promptId } = useParams();
   const navigate = useNavigate();
-  const { getResourceByArn } = useMcpTools();
-  const { createResource, updateResource } = useResourceApi();
-  const isNew = promptId === 'new';
-  const arn = `arn:local:project/${projectId}:prompt/${promptId}`;
 
-  const [prompt, setPrompt] = useState<{ name: string; namespace: string; content?: string; variables?: string[] } | null>(null);
+  const isNew = !promptId || promptId === 'new';
+  const scope = 'global';
+  const arn = isNew
+    ? `arn:local:${scope}:prompt/new`
+    : `arn:local:${scope}:prompt/${promptId}`;
+
+  const [activeTab, setActiveTab] = useState<TabId>('config');
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Prompt spec state
+  const [name, setName] = useState('New Prompt');
+  const [description, setDescription] = useState('');
+  const [contentPath, setContentPath] = useState('');
+  const [inlineContent, setInlineContent] = useState('');
+  const [useInlineContent, setUseInlineContent] = useState(false);
+  const [kind, setKind] = useState<PromptKind>('system');
+  const [template, setTemplate] = useState<string>('');
+  const [markdownContent, setMarkdownContent] = useState('');
+
+  // Load existing prompt
+  const fetchPrompt = useCallback(async () => {
+    if (isNew) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `${restApiUrl('')}/prompts/${encodeURIComponent(arn)}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to load prompt: HTTP ${response.status}`);
+      }
+
+      const data = (await response.json()) as PromptData;
+
+      let spec: Record<string, unknown> = {};
+      try {
+        spec = JSON.parse(data.config);
+      } catch {
+        spec = extractYamlSpec(data.config);
+      }
+
+      // Set raw markdown content for Monaco editor
+      setMarkdownContent(data.config);
+
+      setName(spec.name as string ?? data.name);
+      setDescription((spec.description as string) ?? '');
+      setContentPath((spec.content_path as string) ?? '');
+      setInlineContent((spec.content as string) ?? '');
+      setKind((spec.kind as PromptKind) ?? 'system');
+      setTemplate((spec.template as string) ?? '');
+      setUseInlineContent(!spec.content_path && !!spec.content);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load prompt');
+    } finally {
+      setLoading(false);
+    }
+  }, [isNew, arn]);
 
   useEffect(() => {
-    if (isNew) { setLoading(false); setPrompt({ name: 'New Prompt', namespace: `project/${projectId}`, content: '', variables: [] }); return; }
-    getResourceByArn(`arn:local:project/${projectId}:prompt/${promptId}`).then(r => { if (r) setPrompt((r as unknown as { data: typeof prompt }).data); }).finally(() => setLoading(false));
-  }, [isNew, projectId, promptId, getResourceByArn]);
+    fetchPrompt();
+  }, [fetchPrompt]);
 
-  const handleSave = async () => {
-    if (!prompt) return;
+  // Detect variables from content
+  const detectedVariables = useMemo(() => {
+    const content = useInlineContent ? inlineContent : '';
+    return detectVariables(content);
+  }, [inlineContent, useInlineContent]);
+
+  // Save handler
+  const handleSave = useCallback(async () => {
     setSaving(true);
+    setError(null);
+
     try {
-      const body = {
-        name: prompt.name,
-        description: '',
-        content: prompt.content ?? '',
+      const body: Record<string, unknown> = {
+        name,
+        description: description || '',
+        content_path: useInlineContent ? null : contentPath || null,
+        content: useInlineContent ? inlineContent : null,
+        scope,
+        kind,
+        template: template || null,
       };
 
-      if (isNew) {
-        await createResource('prompt', body);
-      } else {
-        await updateResource(arn, body);
+      const url = isNew
+        ? `${restApiUrl('')}/prompts`
+        : `${restApiUrl('')}/prompts/${encodeURIComponent(arn)}`;
+
+      const method = isNew ? 'POST' : 'PUT';
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(
+          (errData as { message?: string }).message ?? `Failed to save: HTTP ${response.status}`
+        );
       }
+
+      if (isNew) {
+        navigate(`/studio/projects/${projectId}/design/prompts`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save prompt');
     } finally {
       setSaving(false);
     }
-  };
+  }, [
+    isNew,
+    arn,
+    name,
+    description,
+    contentPath,
+    inlineContent,
+    useInlineContent,
+    kind,
+    template,
+    scope,
+    projectId,
+    navigate,
+  ]);
 
-  if (loading) return <div className="flex items-center justify-center h-full"><span className="text-secondary text-sm animate-pulse">Loading...</span></div>;
+  // Loading state
+  if (loading && !isNew) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <span className="text-secondary text-sm animate-pulse">
+          Loading prompt...
+        </span>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-6 py-3 border-b border-outline-variant bg-surface-container/30">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate(`/studio/projects/${projectId}/design/prompts`)} className="text-secondary hover:text-on-surface text-sm">← Prompts</button>
-          <div className="w-px h-4 bg-border-subtle" />
-          <h1 className="text-base font-semibold text-on-surface">{isNew ? 'New Prompt' : promptId}</h1>
-        </div>
-        <button onClick={handleSave} disabled={saving} className="px-4 py-1.5 bg-primary text-on-primary text-sm font-medium rounded disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
-      </div>
-      <div className="flex-1 overflow-auto p-6">
-        {prompt && (
-          <div className="max-w-2xl space-y-6">
-            <div><label className="block text-xs font-medium text-secondary mb-1">Name</label>
-              <input type="text" value={prompt.name} onChange={e => setPrompt(p => p ? { ...p, name: e.target.value } : null)} className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface outline-none focus:border-primary" /></div>
-            <div><label className="block text-xs font-medium text-secondary mb-1">Template Content</label>
-              <textarea value={prompt.content ?? ''} onChange={e => setPrompt(p => p ? { ...p, content: e.target.value } : null)} rows={16} className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface outline-none focus:border-primary resize-none font-mono" /></div>
-            <div><label className="block text-xs font-medium text-secondary mb-1">Variables (comma-separated)</label>
-              <input type="text" value={(prompt.variables ?? []).join(', ')} onChange={e => setPrompt(p => p ? { ...p, variables: e.target.value.split(',').map(v => v.trim()).filter(Boolean) } : null)} className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface outline-none focus:border-primary" /></div>
+    <EditorLayout
+      backLabel="Prompts"
+      backPath={`/studio/projects/${projectId}/design/prompts`}
+      resourceName={isNew ? 'New Prompt' : name}
+      onResourceNameChange={isNew ? setName : undefined}
+      isNew={isNew}
+      scope={isNew ? undefined : scope}
+      onSave={handleSave}
+      saving={saving}
+      error={error}
+      tabs={TABS}
+      activeTab={activeTab}
+      onTabChange={(t) => setActiveTab(t as TabId)}
+    >
+      {/* Tab 1: Configuration */}
+      {activeTab === 'config' && (
+        <div className="max-w-3xl space-y-6">
+          <div className="grid grid-cols-2 gap-6">
+            <FormField label="Name">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface outline-none focus:border-primary"
+              />
+            </FormField>
+
+            <FormField label="Scope">
+              <div className="px-3 py-2 bg-surface-container text-secondary text-sm rounded border border-outline-variant font-mono">
+                {scope}
+              </div>
+            </FormField>
           </div>
-        )}
-      </div>
-    </div>
+
+          <FormField label="Description">
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface outline-none focus:border-primary resize-none"
+            />
+          </FormField>
+
+          <FormField label="Kind" description="Classification of this prompt">
+            <select
+              value={kind}
+              onChange={(e) => setKind(e.target.value as PromptKind)}
+              className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface outline-none focus:border-primary"
+            >
+              <option value="system">System</option>
+              <option value="user">User</option>
+              <option value="template">Template</option>
+            </select>
+          </FormField>
+        </div>
+      )}
+
+      {/* Tab 2: Content */}
+      {activeTab === 'content' && (
+        <div className="max-w-3xl space-y-6">
+          <FormField
+            label="Content Mode"
+            description="Choose between file reference or inline content"
+          >
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  checked={!useInlineContent}
+                  onChange={() => setUseInlineContent(false)}
+                  className="w-4 h-4 text-primary focus:ring-primary"
+                />
+                <span className="text-sm text-on-surface">File Reference</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  checked={useInlineContent}
+                  onChange={() => setUseInlineContent(true)}
+                  className="w-4 h-4 text-primary focus:ring-primary"
+                />
+                <span className="text-sm text-on-surface">Inline Content (legacy)</span>
+              </label>
+            </div>
+          </FormField>
+
+          {useInlineContent ? (
+            <>
+              <FormField
+                label="Inline Content"
+                description="Prompt text with {{variable}} placeholders"
+              >
+                <textarea
+                  value={inlineContent}
+                  onChange={(e) => setInlineContent(e.target.value)}
+                  rows={20}
+                  placeholder="You are a helpful assistant. {{user_name}} is asking about {{topic}}."
+                  className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface outline-none focus:border-primary resize-none font-mono"
+                />
+              </FormField>
+
+              {detectedVariables.length > 0 && (
+                <FormField
+                  label="Detected Variables"
+                  description="Variables automatically inferred from content"
+                >
+                  <div className="border border-outline-variant rounded overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-surface-container/50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-secondary">Name</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-secondary">Inferred Type</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant">
+                        {detectedVariables.map((v) => (
+                          <tr key={v.name}>
+                            <td className="px-3 py-2 font-mono text-sm text-on-surface">{`{{${v.name}}}`}</td>
+                            <td className="px-3 py-2 text-sm text-secondary">{v.type}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </FormField>
+              )}
+            </>
+          ) : (
+            <FormField
+              label="Content Path"
+              description="Path to the prompt file (e.g. prompts/my-prompt.md)"
+            >
+              <input
+                type="text"
+                value={contentPath}
+                onChange={(e) => setContentPath(e.target.value)}
+                placeholder="prompts/my-prompt.md"
+                className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface outline-none focus:border-primary font-mono"
+              />
+            </FormField>
+          )}
+        </div>
+      )}
+
+      {/* Tab 3: Template */}
+      {activeTab === 'template' && (
+        <div className="max-w-3xl space-y-6">
+          <FormField
+            label="Template ARN Reference"
+            description="Optional ARN reference to a template for output formatting"
+          >
+            <ArnSelector
+              resourceKind="template"
+              value={template || null}
+              onChange={(arn) => setTemplate(arn ?? '')}
+              placeholder="arn:local:global:template/output-format"
+            />
+          </FormField>
+
+          {template && (
+            <div className="p-4 bg-surface-container/30 border border-outline-variant rounded-lg">
+              <p className="text-xs text-secondary">
+                Template connected: <span className="font-mono">{template}</span>
+              </p>
+            </div>
+          )}
+
+          {!template && (
+            <div className="p-4 bg-surface-container/30 border border-outline-variant rounded-lg">
+              <p className="text-xs text-secondary text-center">
+                No template connected. Output will be raw text.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab 4: Markdown Editor */}
+      {activeTab === 'yaml' && (
+        <div className="h-full min-h-[500px]">
+          <MarkdownResourceEditor
+            arn={arn}
+            initialValue={markdownContent}
+            onChange={(value) => setMarkdownContent(value)}
+            onSave={async (value) => {
+              const lines = value.split('\n');
+              const frontmatterLines: string[] = [];
+              let bodyLines: string[] = [];
+              let inFrontmatter = false;
+
+              for (const line of lines) {
+                if (line.trim() === '---') {
+                  if (!inFrontmatter) {
+                    inFrontmatter = true;
+                    continue;
+                  } else {
+                    break;
+                  }
+                }
+                if (inFrontmatter) {
+                  frontmatterLines.push(line);
+                } else {
+                  bodyLines.push(line);
+                }
+              }
+
+              const frontmatter: Record<string, unknown> = {};
+              for (const fl of frontmatterLines) {
+                const match = fl.match(/^(\w+):\s*(.*)$/);
+                if (match) {
+                  const [, key, val] = match;
+                  frontmatter[key] = val;
+                }
+              }
+
+              if (frontmatter.name !== undefined) setName(frontmatter.name as string);
+              if (frontmatter.description !== undefined) setDescription(frontmatter.description as string);
+              if (frontmatter.kind !== undefined) setKind(frontmatter.kind as PromptKind);
+              if (frontmatter.template !== undefined) setTemplate(frontmatter.template as string);
+
+              setInlineContent(bodyLines.join('\n').trim());
+              setUseInlineContent(true);
+              setActiveTab('config');
+            }}
+          />
+        </div>
+      )}
+    </EditorLayout>
   );
 }

@@ -12,6 +12,15 @@
 | ADR-0006 | [Multi-Workspace ARN System](0006-multi-workspace-arn.md) | Accepted | 2025-05-17 |
 | ADR-0007 | [Server-Side Execution State Machine](0007-server-side-state-machine.md) | Accepted | 2025-05-17 |
 | ADR-0008 | [Rich MCP Orchestration API](0008-rich-mcp-api.md) | Accepted | 2025-05-17 |
+| ADR-0009 | [Full-system E2E Strategy](0009-full-system-e2e-strategy.md) | Accepted | 2026-05-19 |
+| ADR-0010 | [Unified Agent Data Model](0010-unified-agent-data-model.md) | Accepted | 2026-05-21 |
+| ADR-0011 | [Skill Data Model](0011-skill-data-model.md) | Accepted | 2026-05-21 |
+| ADR-0012 | [Prompt Data Model](0012-prompt-data-model.md) | Accepted | 2026-05-21 |
+| ADR-0013 | [Template Data Model](0013-template-data-model.md) | Accepted | 2026-05-21 |
+| ADR-0014 | [Tool Data Model](0014-tool-data-model.md) | Accepted | 2026-05-21 |
+| ADR-0015 | [Cross-resource Reference System](0015-cross-resource-reference-system.md) | Accepted | 2026-05-21 |
+| ADR-0016 | [Monaco Editors + Rust Validation Pipeline](0016-monaco-editors-rust-validation-pipeline.md) | Accepted | 2026-05-21 |
+| ADR-0017 | [Generic CRUD Handler Extraction](0017-generic-crud-handler.md) | Partially Implemented | 2026-05-22 |
 
 ## Format
 

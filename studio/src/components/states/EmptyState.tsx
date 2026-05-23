@@ -6,6 +6,7 @@ interface EmptyStateProps {
   description: string;
   action?: { label: string; onClick: () => void };
   secondaryAction?: { label: string; onClick: () => void };
+  testId?: string;
 }
 
 export function EmptyState({
@@ -14,11 +15,13 @@ export function EmptyState({
   description,
   action,
   secondaryAction,
+  testId = 'empty-state',
 }: EmptyStateProps) {
   return (
     <div
       className="min-h-[180px] grid place-items-center text-center p-8"
       style={{ background: 'var(--color-surface)' }}
+      data-testid={testId}
     >
       <div className="flex flex-col items-center gap-3 max-w-[440px]">
         {icon && (
@@ -46,6 +49,7 @@ export function EmptyState({
             {action && (
               <button
                 onClick={action.onClick}
+                data-testid={`${testId}-primary-action`}
                 className="px-5 py-2 rounded-lg text-sm font-medium transition-colors"
                 style={{
                   background: 'var(--color-primary)',
@@ -58,6 +62,7 @@ export function EmptyState({
             {secondaryAction && (
               <button
                 onClick={secondaryAction.onClick}
+                data-testid={`${testId}-secondary-action`}
                 className="px-5 py-2 rounded-lg text-sm font-medium transition-colors border"
                 style={{
                   borderColor: 'var(--color-outline)',

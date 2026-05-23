@@ -6,13 +6,39 @@
 import { useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useRegistryStore } from '@/stores/registryStore';
-import { useMcpTools } from '@/hooks/useMcpTools';
 import type { RegistryNode } from '@/types';
+import { restApiUrl } from '@/lib/apiBase';
 
 export function RegistryPage({ section }: { section?: string }) {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const { listWorkflows, listAgents, listSkills, listPrompts } = useMcpTools();
+
+  const fetchRegistryKind = useCallback(async (kind: 'workflows' | 'agents' | 'skills' | 'prompts'): Promise<RegistryNode[]> => {
+    const response = await fetch(restApiUrl(`/${kind}`));
+    if (!response.ok) {
+      throw new Error(`Failed to load ${kind}: HTTP ${response.status}`);
+    }
+
+    const payload = await response.json() as Array<Record<string, unknown>> | Record<string, unknown>;
+    const items = Array.isArray(payload)
+      ? payload
+      : ((payload[kind] as Array<Record<string, unknown>> | undefined) ?? []);
+    const singular = kind.slice(0, -1) as RegistryNode['type'];
+
+    return items.map((item) => {
+      const arn = String(item.arn ?? '');
+      const namespaceMatch = arn.match(/^arn:local:([^:]+):/);
+      return {
+        id: arn,
+        type: singular,
+        name: String(item.name ?? arn.split('/').pop() ?? singular),
+        registry: 'default',
+        namespace: namespaceMatch?.[1] ?? 'global',
+        created_at: String(item.created_at ?? new Date().toISOString()),
+        updated_at: String(item.created_at ?? new Date().toISOString()),
+      } satisfies RegistryNode;
+    });
+  }, []);
 
   const {
     resources,
@@ -30,10 +56,10 @@ export function RegistryPage({ section }: { section?: string }) {
     setError(null);
     try {
       const [workflows, agents, skills, prompts] = await Promise.all([
-        listWorkflows(),
-        listAgents(),
-        listSkills(),
-        listPrompts(),
+        fetchRegistryKind('workflows'),
+        fetchRegistryKind('agents'),
+        fetchRegistryKind('skills'),
+        fetchRegistryKind('prompts'),
       ]);
 
       const all: RegistryNode[] = [
@@ -48,11 +74,13 @@ export function RegistryPage({ section }: { section?: string }) {
     } finally {
       setLoading(false);
     }
-  }, [listWorkflows, listAgents, listSkills, listPrompts, setResources, setLoading, setError]);
+  }, [fetchRegistryKind, setResources, setLoading, setError]);
 
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  const pageMode = section ?? 'registry';
 
   // Apply filters
   const filtered = resources.filter((r) => {
@@ -79,8 +107,15 @@ export function RegistryPage({ section }: { section?: string }) {
     return true;
   });
 
+  const sectionFiltered = filtered.filter((r) => {
+    if (pageMode === 'overrides') {
+      return !r.namespace.startsWith('global');
+    }
+    return true;
+  });
+
   // Group by type for display
-  const grouped = filtered.reduce(
+  const grouped = sectionFiltered.reduce(
     (acc, r) => {
       if (!acc[r.type]) acc[r.type] = [];
       acc[r.type].push(r);
@@ -91,14 +126,26 @@ export function RegistryPage({ section }: { section?: string }) {
 
   const typeOrder = ['workflow', 'agent', 'skill', 'prompt', 'tool', 'template', 'policy'];
 
+  const heading = pageMode === 'resources'
+    ? 'Registry Resources'
+    : pageMode === 'overrides'
+    ? 'Registry Overrides'
+    : 'Registry';
+
+  const subtitle = pageMode === 'resources'
+    ? 'Browse resources discovered from the registry.'
+    : pageMode === 'overrides'
+    ? 'Scoped resources that can override inherited global behavior.'
+    : 'Registry explorer';
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant">
         <div>
-          <h1 className="text-lg font-semibold text-on-surface capitalize">{section}</h1>
+          <h1 className="text-lg font-semibold text-on-surface">{heading}</h1>
           <p className="text-sm text-secondary mt-0.5">
-            {projectId ? `Project: ${projectId}` : 'Registry'}
+            {projectId ? `Project: ${projectId} · ${subtitle}` : subtitle}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -131,6 +178,7 @@ export function RegistryPage({ section }: { section?: string }) {
 
         {/* Kind filter */}
         <select
+          aria-label="Filter resources by kind"
           value={filters.kind}
           onChange={(e) => setFilters({ kind: e.target.value as typeof filters.kind })}
           className="text-sm bg-surface border border-outline-variant rounded px-3 py-1.5 text-secondary outline-none focus:border-primary"
@@ -147,6 +195,7 @@ export function RegistryPage({ section }: { section?: string }) {
 
         {/* Scope filter */}
         <select
+          aria-label="Filter resources by scope"
           value={filters.scope}
           onChange={(e) => setFilters({ scope: e.target.value })}
           className="text-sm bg-surface border border-outline-variant rounded px-3 py-1.5 text-secondary outline-none focus:border-primary"
@@ -160,6 +209,12 @@ export function RegistryPage({ section }: { section?: string }) {
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
+        {pageMode === 'overrides' && (
+          <div className="mx-6 mt-4 rounded-lg border border-info/20 bg-info/5 px-4 py-3 text-sm text-secondary">
+            This view currently approximates overrides by showing non-global resources. True origin/override lineage is not yet surfaced here.
+          </div>
+        )}
+
         {error && (
           <div className="mx-6 mt-4 p-4 bg-error/5 border border-primary-error/20 rounded text-error text-sm">
             {error}
@@ -168,7 +223,7 @@ export function RegistryPage({ section }: { section?: string }) {
 
         {loading && resources.length === 0 ? (
           <div className="p-8 text-center text-secondary text-sm animate-pulse">Loading registry...</div>
-        ) : filtered.length === 0 ? (
+        ) : sectionFiltered.length === 0 ? (
           <div className="p-8 text-center text-secondary text-sm">
             {resources.length === 0
               ? 'No resources found. Create one to get started.'
@@ -182,7 +237,7 @@ export function RegistryPage({ section }: { section?: string }) {
                 <div key={type}>
                   <div className="flex items-center gap-2 mb-2">
                     <h2 className="text-sm font-semibold text-on-surface capitalize">{type}s</h2>
-                    <span className="text-xs text-secondary bg-surface-container px-1.5 py-0.5 rounded">
+                    <span className="text-xs text-on-surface bg-surface-container px-1.5 py-0.5 rounded font-medium">
                       {grouped[type].length}
                     </span>
                   </div>
@@ -205,17 +260,17 @@ function ResourceRow({ node }: { node: RegistryNode }) {
 
   // Determine scope badge
   const scopeBadge = node.namespace.startsWith('workspace/')
-    ? { label: 'workspace', color: 'text-secondary' }
+    ? { label: 'workspace', className: 'bg-secondary-container text-on-secondary-container border-secondary/40' }
     : node.namespace.startsWith('project/')
-    ? { label: 'project', color: 'text-primary' }
-    : { label: 'global', color: 'text-success' };
+    ? { label: 'project', className: 'bg-primary-container text-on-primary-container border-primary/40' }
+    : { label: 'global', className: 'bg-success-container text-on-success-container border-success/40' };
 
   return (
     <button
       onClick={() => navigate(`/studio/projects/${node.namespace.split('/')[1]}/registry/resource?arn=${encodeURIComponent(node.id)}`)}
       className="w-full flex items-center gap-3 px-4 py-2.5 bg-surface border border-outline-variant rounded-lg hover:border-primary/50 hover:bg-surface-container/50 transition-all text-left group"
     >
-      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${scopeBadge.color} border-current opacity-70`}>
+      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${scopeBadge.className}`}>
         {scopeBadge.label}
       </span>
       <div className="flex-1 min-w-0">

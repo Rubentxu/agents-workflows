@@ -431,7 +431,7 @@ dev-quadlet-disable:
     @echo "Quadlet disabled. Use 'just dev-start' for development mode."
 
 # Development mode: run binary directly (faster iteration than container)
-dev-start:
+dev-start: kill-server
     @echo "Starting development server (binary directly)..."
     @echo "Press Ctrl+C to stop"
     cargo build --release -p mcp-server
@@ -440,14 +440,31 @@ dev-start:
         RUST_LOG=debug \
         {{ TARGET_BINARY }} start --workspace {{ WORKSPACE_DIR }} --port {{ MCP_PORT }}
 
-# Development mode with cargo run (even faster, no binary copy)
-dev-run:
-    @echo "Starting dev server with cargo run..."
-    @echo "Press Ctrl+C to stop"
+# Kill any existing process on the server ports
+kill-server:
+    @echo "Killing existing server processes..."
+    -pkill -f "workflow-mcp" || true
+    -fuser -k {{ MCP_PORT }}/tcp 2>/dev/null || true
+    -fuser -k {{ REST_PORT }}/tcp 2>/dev/null || true
+    sleep 1
+    @echo "Ports cleared"
+
+# Development mode with cargo run (even faster, no binary copy) - non-blocking
+dev-run: kill-server
+    @echo "Starting dev server with cargo run (background)..."
+    @echo "Logs: ~/.workflows/server.log"
     cd {{ ROOT }} && \
         STUDIO_PATH="{{ ROOT }}/studio/dist" \
         RUST_LOG=debug \
-        cargo run --release -p mcp-server -- start --workspace {{ WORKSPACE_DIR }} --port {{ MCP_PORT }}
+        nohup cargo run --release -p mcp-server -- start --workspace {{ WORKSPACE_DIR }} --port {{ MCP_PORT }} > ~/.workflows/server.log 2>&1 &
+    sleep 2
+    @if curl -sf http://localhost:{{ MCP_PORT }}/health > /dev/null 2>&1; then \
+        echo "✓ Server running at http://localhost:{{ MCP_PORT }}/studio"; \
+        echo "✓ Health: http://localhost:{{ MCP_PORT }}/health"; \
+    else \
+        echo "✗ Server failed to start. Check logs:"; \
+        tail -20 ~/.workflows/server.log; \
+    fi
 
 # Rebuild container image and restart service (after code changes)
 dev-rebuild:
@@ -510,6 +527,10 @@ test_e2e: test_container_up
     cd tests && npx playwright test
     @echo "Reports at: tests/playwright-report/"
 
+# Run all E2E tests against an existing local server
+test_e2e_local:
+    cd tests && E2E_MODE=attach SKIP_CONTAINER_CHECK=1 npx playwright test
+
 # Run API tests only
 test_api: test_container_up
     cd tests && npx playwright test --project=api
@@ -525,6 +546,30 @@ test_workflows: test_container_up
 # Run UI (Playwright browser) tests only
 test_ui: test_container_up
     cd tests && npx playwright test --project=chromium
+
+# Run UI tests against an existing local server
+test_ui_local:
+    cd tests && E2E_MODE=attach SKIP_CONTAINER_CHECK=1 npx playwright test --project=chromium
+
+# Run visual regression baselines against an existing local server
+test_visual_local:
+    cd tests && E2E_MODE=attach SKIP_CONTAINER_CHECK=1 npx playwright test e2e/visual-regression.spec.ts --project=chromium-visual-regression
+
+# Update visual regression baselines against an existing local server
+test_visual_update_local:
+    cd tests && E2E_MODE=attach SKIP_CONTAINER_CHECK=1 npx playwright test e2e/visual-regression.spec.ts --project=chromium-visual-regression --update-snapshots
+
+# Run functional screenshot audit against an existing local server
+test_functional_audit_local:
+    cd tests && E2E_MODE=attach SKIP_CONTAINER_CHECK=1 npx playwright test e2e/functional-audit-captures.spec.ts --project=chromium-functional-audit
+
+# Run accessibility suite against an existing local server
+test_accessibility_local:
+    cd tests && E2E_MODE=attach SKIP_CONTAINER_CHECK=1 npx playwright test e2e/studio-accessibility.spec.ts --project=chromium-accessibility
+
+# Run performance suite against an existing local server
+test_performance_local:
+    cd tests && E2E_MODE=attach SKIP_CONTAINER_CHECK=1 npx playwright test e2e/performance.spec.ts --project=chromium-performance
 
 # Run tests in debug mode
 test_debug: test_container_up

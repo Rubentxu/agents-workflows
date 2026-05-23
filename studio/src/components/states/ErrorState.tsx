@@ -5,16 +5,18 @@ interface ErrorStateProps {
   message: string;
   onRetry?: () => void;
   details?: string;
+  testId?: string;
 }
 
-export function ErrorState({ title, message, onRetry, details }: ErrorStateProps) {
+export function ErrorState({ title, message, onRetry, details, testId = 'error-state' }: ErrorStateProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
     <div
       className="flex flex-col gap-3 p-4 rounded-xl"
-      role="alert"
-      style={{
+        role="alert"
+        data-testid={testId}
+        style={{
         background: 'var(--color-warning-container)',
         color: 'var(--color-on-warning-container)',
         border: '1px solid var(--color-warning)',
@@ -47,6 +49,7 @@ export function ErrorState({ title, message, onRetry, details }: ErrorStateProps
         <div>
           <button
             onClick={() => setExpanded((e) => !e)}
+            data-testid={`${testId}-details-toggle`}
             className="text-xs underline underline-offset-2 opacity-80 hover:opacity-100 transition-opacity"
           >
             {expanded ? 'Hide details' : 'View details'}
@@ -69,6 +72,7 @@ export function ErrorState({ title, message, onRetry, details }: ErrorStateProps
       {onRetry && (
         <button
           onClick={onRetry}
+          data-testid={`${testId}-retry`}
           className="self-start px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
           style={{
             background: 'var(--color-warning)',

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { LoadingState } from '@/components/states/LoadingState';
 import { EmptyState } from '@/components/states/EmptyState';
+import { restApiUrl } from '@/lib/apiBase';
 
 type AlertSeverity = 'info' | 'warning' | 'critical';
 type AlertState = 'open' | 'acknowledged' | 'resolved';
@@ -40,7 +41,7 @@ export function AlertsPage() {
     try {
       const params = new URLSearchParams();
       if (stateFilter !== 'all') params.set('state', stateFilter);
-      const res = await fetch(`/api/alerts?${params}`);
+      const res = await fetch(restApiUrl(`/alerts?${params}`));
       if (!res.ok) throw new Error('Failed to fetch alerts');
       const data = await res.json();
       const mapped: Alert[] = (data.alerts ?? []).map((a: Record<string, unknown>) => ({

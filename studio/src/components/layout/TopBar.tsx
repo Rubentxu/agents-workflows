@@ -37,6 +37,7 @@ export function TopBar() {
           className="mobile-menu-button"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+          data-testid="topbar-mobile-menu-toggle"
         >
           {mobileMenuOpen ? '✕' : '☰'}
         </button>
@@ -45,12 +46,14 @@ export function TopBar() {
           className="sidebar-toggle"
           onClick={toggleSidebar}
           aria-label="Toggle sidebar"
+          data-testid="topbar-sidebar-toggle"
         >
           ☰
         </button>
 
         <button
           onClick={() => navigate('/studio')}
+          data-testid="topbar-studio-home"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -76,6 +79,7 @@ export function TopBar() {
               value={currentProject}
               onChange={(e) => navigate(`/studio/projects/${e.target.value}`)}
               aria-label="Select project"
+              data-testid="project-selector"
               style={{
                 fontSize: '14px',
                 fontWeight: 500,
@@ -106,6 +110,7 @@ export function TopBar() {
             loading={loading}
             error={error ?? undefined}
             onRetry={refresh}
+            testId="workspace-selector"
           />
         </div>
 
@@ -113,14 +118,16 @@ export function TopBar() {
           className="topbar-search"
           onClick={() => setCommandOpen(true)}
           aria-label="Open search"
+          data-testid="command-palette-open"
         >
-          <span style={{ opacity: 0.5 }}>Search...</span>
+          <span style={{ color: 'var(--color-on-surface)', opacity: 0.8 }}>Search...</span>
           <kbd>⌘K</kbd>
         </button>
 
         <button
           className="icon-button"
           aria-label="Notifications"
+          data-testid="notifications-button"
           style={{ position: 'relative' }}
         >
           <span aria-hidden="true">🔔</span>
@@ -138,7 +145,7 @@ export function TopBar() {
         </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span className="connection-dot connection-dot--connected" aria-label="Connected" />
+          <span className="connection-dot connection-dot--connected" aria-hidden="true" />
           <span style={{ fontSize: '12px', color: 'var(--color-on-surface)', opacity: 0.6 }}>
             Connected
           </span>
@@ -148,6 +155,7 @@ export function TopBar() {
           className="icon-button"
           onClick={() => setTheme(resolved === 'dark' ? 'light' : 'dark')}
           aria-label={resolved === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          data-testid="theme-toggle"
         >
           <span aria-hidden="true">{resolved === 'dark' ? '☀' : '☾'}</span>
         </button>

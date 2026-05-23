@@ -1,0 +1,24 @@
+arn: arn:local:global:tool/bash
+name: bash
+description: "Execute shell commands in a persistent bash session"
+source: "builtin://bash"
+source_type: "builtin"
+category: "core"
+input_schema:
+  type: object
+  properties:
+    command:
+      type: string
+      description: "Shell command to execute"
+    timeout:
+      type: integer
+      description: "Optional timeout in milliseconds"
+    workdir:
+      type: string
+      description: "Working directory for the command"
+  required:
+    - command
+tags:
+  - "shell"
+  - "execute"
+  - "core"

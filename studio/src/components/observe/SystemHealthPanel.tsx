@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { restApiUrl } from '@/lib/apiBase';
 
 interface HealthIndicator {
   label: string;
@@ -108,7 +109,7 @@ export function SystemHealthPanel({ className }: SystemHealthPanelProps) {
     const fetchHealth = async () => {
       setLoading(true);
       try {
-        const response = await fetch('/api/health');
+        const response = await fetch(restApiUrl('/health'));
         if (response.ok) {
           const data = await response.json();
           setHealth({

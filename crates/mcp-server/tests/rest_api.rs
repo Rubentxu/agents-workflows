@@ -45,7 +45,7 @@ fn create_test_rest_state() -> (RestState, TempDir) {
     let analytics_service = Arc::new(AnalyticsService::new());
     let sse_emitter = Arc::new(SseEmitter::new());
     let metrics_aggregator = Arc::new(MetricsAggregator::new());
-    let app_state = Arc::new(AppState { node_service, db, execution_store, artifact_store, artifact_service, analytics_service, sse_emitter, metrics_aggregator });
+    let app_state = Arc::new(AppState { node_service, db, execution_store, artifact_store, artifact_service, analytics_service, sse_emitter, metrics_aggregator, workspace_root: PathBuf::from(temp_dir.path()) });
     let state = RestState::new(app_state);
     (state, temp_dir)
 }

@@ -30,7 +30,6 @@ import { TemplateEditorPage } from '@/components/design/TemplateEditorPage';
 // Design — Generic catalog (single deep module)
 import { ResourceCatalogPage } from '@/components/design/ResourceCatalogPage';
 import { useMcpTools } from '@/hooks/useMcpTools';
-import type { RegistryNode } from '@/types';
 
 // Observe
 import { AgentExecutionListPage } from '@/components/observe/AgentExecutionListPage';
@@ -93,6 +92,7 @@ function SkillsCatalog() {
       createPath={`/studio/projects/${projectId}/design/skills/new/editor`}
       editorPath={(id) => `/studio/projects/${projectId}/design/skills/${encodeURIComponent(id)}/editor`}
       projectId={projectId}
+      deletable
     />
   );
 }
@@ -109,39 +109,41 @@ function PromptsCatalog() {
       createPath={`/studio/projects/${projectId}/design/prompts/new/editor`}
       editorPath={(id) => `/studio/projects/${projectId}/design/prompts/${encodeURIComponent(id)}/editor`}
       projectId={projectId}
+      deletable
     />
   );
 }
 
 function ToolsCatalog() {
   const { projectId } = useParams();
-  // listTools not yet implemented — pass empty mock
-  const emptyFetch = async (): Promise<RegistryNode[]> => [];
+  const { listTools } = useMcpTools();
   return (
     <ResourceCatalogPage
       resourceLabel="Tools"
       resourceType="tool"
       accentColor="orange"
-      fetchFn={emptyFetch}
+      fetchFn={listTools}
       createPath={`/studio/projects/${projectId}/design/tools/new/editor`}
       editorPath={(id) => `/studio/projects/${projectId}/design/tools/${encodeURIComponent(id)}/editor`}
       projectId={projectId}
+      deletable
     />
   );
 }
 
 function TemplatesCatalog() {
   const { projectId } = useParams();
-  const emptyFetch = async (): Promise<RegistryNode[]> => [];
+  const { listTemplates } = useMcpTools();
   return (
     <ResourceCatalogPage
       resourceLabel="Templates"
       resourceType="template"
       accentColor="cyan"
-      fetchFn={emptyFetch}
+      fetchFn={listTemplates}
       createPath={`/studio/projects/${projectId}/design/templates/new/editor`}
       editorPath={(id) => `/studio/projects/${projectId}/design/templates/${encodeURIComponent(id)}/editor`}
       projectId={projectId}
+      deletable
     />
   );
 }
@@ -223,9 +225,9 @@ export function createStudioRouter(): ReturnType<typeof createBrowserRouter> {
           {/* Registry section */}
           <Route path="registry">
             <Route index element={<RegistryPage section="registry" />} />
-            <Route path="resources" element={<RegistryPage section="registry" />} />
+            <Route path="resources" element={<RegistryPage section="resources" />} />
             <Route path="resource" element={<ResourceDetailPage />} />
-            <Route path="overrides" element={<RegistryPage section="registry" />} />
+            <Route path="overrides" element={<RegistryPage section="overrides" />} />
             <Route path="dependencies" element={<DependenciesPage />} />
           </Route>
 

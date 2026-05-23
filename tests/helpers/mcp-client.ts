@@ -165,6 +165,13 @@ export class MCPClient {
   }
   
   /**
+   * Helper to wait (for use in test flows)
+   */
+  async waitForTimeout(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
    * Extract text content from MCP tool result
    */
   parseToolResult(result: unknown): unknown {
@@ -187,4 +194,12 @@ export class MCPClient {
     
     return result;
   }
+}
+
+export function extractArn(item: unknown): string {
+  if (typeof item === 'string') return item;
+  if (typeof item === 'object' && item !== null && 'arn' in item) {
+    return (item as { arn: string }).arn;
+  }
+  throw new Error('Cannot extract ARN');
 }

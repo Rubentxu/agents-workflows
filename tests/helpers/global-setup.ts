@@ -7,11 +7,12 @@
  * 3. Create isolated workspace for this test session
  */
 
-import { chromium, request, FullConfig } from '@playwright/test';
+import { request, FullConfig } from '@playwright/test';
 
 const CONTAINER_NAME = process.env.CONTAINER_NAME || 'agents-workflows';
 const BASE_URL = process.env.AGENTS_WORKFLOWS_URL || 'http://localhost:8080';
 const REST_URL = process.env.AGENTS_WORKFLOWS_REST_URL || 'http://localhost:8081';
+const E2E_MODE = process.env.E2E_MODE || (process.env.CI ? 'container' : 'attach');
 
 /**
  * Generate unique workspace ID for this test session
@@ -22,9 +23,11 @@ function generateWorkspaceId(): string {
 
 async function globalSetup(config: FullConfig) {
   console.log('=== Global Setup ===');
+  console.log(`E2E mode: ${E2E_MODE}`);
   
-  // Skip container check if SKIP_CONTAINER_CHECK env is set (for local development)
-  if (process.env.SKIP_CONTAINER_CHECK !== '1') {
+  // Container mode is canonical for CI. Attach mode is explicit for local runs.
+  const requireContainer = E2E_MODE === 'container' && process.env.SKIP_CONTAINER_CHECK !== '1';
+  if (requireContainer) {
     // 1. Check if container is running
     console.log('Checking container status...');
     const { execSync } = await import('child_process');
@@ -46,7 +49,7 @@ async function globalSetup(config: FullConfig) {
       );
     }
   } else {
-    console.log('Skipping container check (SKIP_CONTAINER_CHECK=1)');
+    console.log('Skipping container check (attach mode or SKIP_CONTAINER_CHECK=1)');
   }
   
   // 2. Wait for service to be healthy
@@ -74,7 +77,7 @@ async function globalSetup(config: FullConfig) {
   }
   
   // 3. Create isolated workspace for this session
-  const workspaceId = generateWorkspaceId();
+  const workspaceId = process.env.TEST_WORKSPACE_ID || generateWorkspaceId();
   process.env.TEST_WORKSPACE_ID = workspaceId;
   console.log(`✓ Created isolated workspace: ${workspaceId}`);
   

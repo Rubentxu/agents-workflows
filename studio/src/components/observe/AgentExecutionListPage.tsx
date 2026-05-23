@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useExecutionApi } from '@/hooks/useExecutionApi';
 import { LoadingState } from '@/components/states/LoadingState';
@@ -13,7 +13,8 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string; dot
   completed: { bg: 'var(--color-success-container)', text: 'var(--color-on-success-container)', dot: 'var(--color-success)' },
   failed: { bg: 'var(--color-error-container)', text: 'var(--color-on-error-container)', dot: 'var(--color-error)' },
   pending: { bg: 'var(--color-warning-container)', text: 'var(--color-on-warning-container)', dot: 'var(--color-warning)' },
-  cancelled: { bg: 'var(--color-surface-container-high)', text: 'var(--color-secondary)', dot: 'var(--color-secondary)' },
+  aborted: { bg: 'var(--color-secondary-container)', text: 'var(--color-on-secondary-container)', dot: 'var(--color-secondary)' },
+  paused: { bg: 'var(--color-tertiary-container)', text: 'var(--color-on-tertiary-container)', dot: 'var(--color-tertiary)' },
 };
 
 export function AgentExecutionListPage() {
@@ -45,6 +46,10 @@ export function AgentExecutionListPage() {
     ? executions
     : executions.filter((e) => e.status === statusFilter);
 
+  useEffect(() => {
+    void fetchExecutions();
+  }, [fetchExecutions]);
+
   const formatDuration = (ms?: number) => {
     if (!ms) return '\u2014';
     if (ms < 1000) return `${ms}ms`;
@@ -60,6 +65,7 @@ export function AgentExecutionListPage() {
   return (
     <div className="flex flex-col h-full">
       <div
+        data-testid="agent-executions-header"
         className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-6 py-4"
         style={{ borderBottom: '1px solid var(--color-outline-variant)' }}
       >
@@ -83,12 +89,13 @@ export function AgentExecutionListPage() {
               <button
                 key={f}
                 onClick={() => setStatusFilter(f)}
+                data-testid={`agent-executions-filter-${f}`}
                 className="px-3 py-1 text-xs font-medium rounded transition-colors capitalize"
                 aria-pressed={statusFilter === f}
                 style={
                   statusFilter === f
                     ? { background: 'var(--color-primary)', color: 'var(--color-on-primary)' }
-                    : { color: 'var(--color-secondary)' }
+                    : { color: 'var(--color-on-surface)' }
                 }
               >
                 {f}
@@ -98,6 +105,7 @@ export function AgentExecutionListPage() {
           <button
             onClick={fetchExecutions}
             disabled={loading}
+            data-testid="agent-executions-refresh"
             className="px-3 py-1.5 text-xs rounded transition-colors"
             aria-busy={loading}
             style={{
@@ -132,18 +140,20 @@ export function AgentExecutionListPage() {
                 <path d="M6 8h8M6 11h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             }
-            title="No agent executions yet"
-            description="Agent executions will appear here once they are run. Executions are reported by agents through MCP."
-          />
+              title="No agent executions yet"
+              description="Agent executions will appear here once they are run. Executions are reported by agents through MCP."
+              testId="agent-executions-empty-state"
+            />
         ) : (
-          <div className="space-y-2" role="list" aria-label="Agent executions">
+          <div className="space-y-2" role="list" aria-label="Agent executions" data-testid="agent-executions-list">
             {filtered.map((exec) => {
-              const sc = STATUS_COLORS[exec.status] ?? STATUS_COLORS.cancelled;
+              const sc = STATUS_COLORS[exec.status] ?? STATUS_COLORS.aborted;
               return (
                 <div
                   key={exec.id}
                   role="listitem"
                   onClick={() => navigate(`/studio/projects/${projectId}/observe/agent-executions/${encodeURIComponent(exec.id)}`)}
+                  data-testid={`agent-executions-row-${exec.id}`}
                   className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 py-3 rounded-lg cursor-pointer group"
                   style={{
                     background: 'var(--color-surface)',
@@ -170,11 +180,11 @@ export function AgentExecutionListPage() {
                       <span className="text-sm font-medium truncate" style={{ color: 'var(--color-on-surface)' }}>
                         {exec.workflowArn.split('/').pop() ?? exec.workflowArn}
                       </span>
-                      <span
-                        className="text-[10px] font-medium px-1.5 py-0.5 rounded capitalize"
-                        style={{
-                          color: sc.text,
-                          background: sc.bg,
+                        <span
+                          className="text-[11px] font-medium px-1.5 py-0.5 rounded capitalize"
+                          style={{
+                            color: sc.text,
+                            background: sc.bg,
                         }}
                         aria-label={`Status: ${exec.status}`}
                       >

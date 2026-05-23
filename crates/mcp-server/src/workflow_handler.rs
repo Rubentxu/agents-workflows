@@ -557,6 +557,7 @@ stages:
             analytics_service,
             sse_emitter,
             metrics_aggregator,
+            workspace_root: PathBuf::from("/tmp/test-workspace"),
         });
 
         let mcp_handler = Arc::new(McpHandler::new(state.clone(), Arc::new(MetricsBroadcaster::new())));

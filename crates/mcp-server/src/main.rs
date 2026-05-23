@@ -48,6 +48,7 @@ mod rest_handlers;
 mod studio;
 mod bootstrap;
 mod auth;
+mod resources;
 
 use state::AppState;
 use metrics_sse::MetricsBroadcaster;
@@ -585,9 +586,9 @@ async fn start_server(workspace: String, port: u16) -> Result<(), Box<dyn std::e
     let state_for_rest = state.clone();
     info!("Application state initialized");
 
-    // Register workflows from YAML into database
-    bootstrap.register_workflows_to_db(state.node_service.clone())?;
-    info!("Workflows registered from YAML files");
+    // Register all resources (workflows, agents, tools, skills, prompts) from YAML/files into database
+    bootstrap.register_resources_to_db(state.node_service.clone())?;
+    info!("Resources registered from YAML files");
 
     // Initialize metrics broadcaster
     let broadcaster = Arc::new(MetricsBroadcaster::new());
@@ -610,8 +611,11 @@ async fn start_server(workspace: String, port: u16) -> Result<(), Box<dyn std::e
     let rest_state = RestState::new(state_for_rest);
     let rest_app = create_rest_router(rest_state);
 
-    // Start REST API server on port 8081
-    let rest_port = 8081;
+    // Start REST API server on configurable port (default 8081)
+    let rest_port: u16 = std::env::var("REST_PORT")
+        .unwrap_or_else(|_| "8081".to_string())
+        .parse()
+        .unwrap_or(8081);
     let rest_addr = SocketAddr::from(([0, 0, 0, 0], rest_port));
     let rest_listener = TcpListener::bind(rest_addr).await?;
     info!("REST API server listening on http://{}", rest_addr);

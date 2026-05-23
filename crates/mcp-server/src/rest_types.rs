@@ -70,65 +70,214 @@ pub struct UpdateWorkflowRequest {
 }
 
 // ============================================================================
-// Agent DTOs
+// Agent DTOs — ADR-0010: superset of opencode AgentConfig
 // ============================================================================
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateAgentRequest {
     pub scope: String,
     pub name: String,
-    pub description: Option<String>,
+    pub description: String,
+    /// Model in provider/model-id format (e.g. "anthropic/claude-sonnet-4-20250514")
     pub model: String,
+    /// ARN of the Prompt resource for system instructions (single reference)
+    pub prompt: Option<String>,
+    /// ARN references to Skill resources
+    #[serde(default)]
     pub skills: Vec<String>,
-    pub tools: Vec<String>,
+    /// Tool enable/disable map — tool name → enabled
+    #[serde(default)]
+    pub tools: std::collections::HashMap<String, bool>,
+    /// Granular permission config (glob patterns, ask/allow/deny)
+    pub permission: Option<serde_json::Value>,
+    pub temperature: Option<f64>,
+    pub top_p: Option<f64>,
+    /// Max agentic iterations before forcing text-only response
+    pub steps: Option<u32>,
+    /// primary | subagent | all
+    #[serde(default = "default_agent_mode")]
+    pub mode: String,
+    /// Hide from autocomplete (subagent only)
+    #[serde(default)]
+    pub hidden: bool,
+    /// Visual color: hex (#FF5733) or theme color (primary, secondary, etc.)
+    pub color: Option<String>,
+    /// Model variant
+    pub variant: Option<String>,
+    /// Arbitrary passthrough to provider as model options
+    pub options: Option<serde_json::Value>,
+}
+
+fn default_agent_mode() -> String {
+    "all".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateAgentRequest {
     pub description: Option<String>,
     pub model: Option<String>,
+    pub prompt: Option<String>,
     pub skills: Option<Vec<String>>,
-    pub tools: Option<Vec<String>>,
+    pub tools: Option<std::collections::HashMap<String, bool>>,
+    pub permission: Option<serde_json::Value>,
+    pub temperature: Option<f64>,
+    pub top_p: Option<f64>,
+    pub steps: Option<u32>,
+    pub mode: Option<String>,
+    pub hidden: Option<bool>,
+    pub color: Option<String>,
+    pub variant: Option<String>,
+    pub options: Option<serde_json::Value>,
 }
 
 // ============================================================================
-// Skill DTOs
+// Skill DTOs — ADR-0011: content_path + required_tools + references
 // ============================================================================
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateSkillRequest {
     pub name: String,
     pub description: String,
-    pub content: String,
+    /// Path to SKILL.md file (relative to registry root)
+    pub content_path: Option<String>,
+    /// Legacy inline content (deprecated, prefer content_path)
+    pub content: Option<String>,
+    #[serde(default)]
     pub triggers: Vec<String>,
     #[serde(default = "default_global_scope")]
     pub scope: String,
+    pub version: Option<String>,
+    pub author: Option<String>,
+    pub license: Option<String>,
+    /// ARN references to other skills (shared modules)
+    #[serde(default)]
+    pub references: Vec<String>,
+    /// Tool names this skill requires — agents must merge these into their tools
+    #[serde(default)]
+    pub required_tools: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateSkillRequest {
     pub description: Option<String>,
+    pub content_path: Option<String>,
     pub content: Option<String>,
     pub triggers: Option<Vec<String>>,
+    pub version: Option<String>,
+    pub author: Option<String>,
+    pub license: Option<String>,
+    pub references: Option<Vec<String>>,
+    pub required_tools: Option<Vec<String>>,
 }
 
 // ============================================================================
-// Prompt DTOs
+// Prompt DTOs — ADR-0012: prompt-as-function with typed I/O
 // ============================================================================
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreatePromptRequest {
     pub name: String,
-    pub description: Option<String>,
-    pub content: String,
+    pub description: String,
+    /// Path to prompt body file with {{variable}} placeholders
+    pub content_path: Option<String>,
+    /// Legacy inline content (deprecated, prefer content_path)
+    pub content: Option<String>,
     #[serde(default = "default_global_scope")]
     pub scope: String,
+    /// Prompt classification: system | user | template
+    #[serde(default = "default_prompt_kind")]
+    pub kind: Option<String>,
+    /// ARN of Template resource for output format
+    pub template: Option<String>,
+}
+
+fn default_prompt_kind() -> Option<String> {
+    Some("system".to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdatePromptRequest {
     pub description: Option<String>,
+    pub content_path: Option<String>,
     pub content: Option<String>,
+    pub kind: Option<String>,
+    pub template: Option<String>,
+}
+
+// ============================================================================
+// Template DTOs — ADR-0013: native format files with frontmatter
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateTemplateRequest {
+    pub name: String,
+    pub description: String,
+    /// Path to template file in native format (markdown, json, yaml, text)
+    pub content_path: String,
+    /// Output format: markdown | json | yaml | text
+    pub format: String,
+    /// What resource type uses this template: prompt | agent | skill | tool | any
+    #[serde(default = "default_target_kind")]
+    pub target_kind: Option<String>,
+    #[serde(default = "default_global_scope")]
+    pub scope: String,
+}
+
+fn default_target_kind() -> Option<String> {
+    Some("any".to_string())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateTemplateRequest {
+    pub description: Option<String>,
+    pub content_path: Option<String>,
+    pub format: Option<String>,
+    pub target_kind: Option<String>,
+}
+
+// ============================================================================
+// Tool DTOs — ADR-0014: MCP catalog + builtin + custom
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateToolRequest {
+    pub name: String,
+    pub description: String,
+    /// Tool origin: mcp://{server} | builtin://{name} | custom://{name}
+    pub source: String,
+    /// mcp | builtin | custom
+    pub source_type: String,
+    /// JSON Schema describing input parameters
+    pub input_schema: Option<serde_json::Value>,
+    /// JSON Schema describing output (optional)
+    pub output_schema: Option<serde_json::Value>,
+    /// Catalog grouping category
+    #[serde(default = "default_tool_category")]
+    pub category: Option<String>,
+    /// Search/filter labels
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Path to implementation script (custom tools only)
+    pub implementation_path: Option<String>,
+    /// Runtime for custom tools: bash | node | python
+    pub runtime: Option<String>,
+    #[serde(default = "default_global_scope")]
+    pub scope: String,
+}
+
+fn default_tool_category() -> Option<String> {
+    Some("custom".to_string())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateToolRequest {
+    pub description: Option<String>,
+    pub input_schema: Option<serde_json::Value>,
+    pub output_schema: Option<serde_json::Value>,
+    pub category: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub implementation_path: Option<String>,
+    pub runtime: Option<String>,
 }
 
 // ============================================================================

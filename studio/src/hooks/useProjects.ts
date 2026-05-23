@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { restApiUrl } from '@/lib/apiBase';
 
 export interface Project {
   id: string;
@@ -19,7 +20,7 @@ export function useProjects() {
     (async () => {
       setLoading(true);
       try {
-        const res = await fetch('/api/workspaces');
+        const res = await fetch(restApiUrl('/workspaces'));
         if (res.ok) {
           const data = await res.json() as { workspaces?: Array<{ id: string; name: string }> };
           if (data.workspaces && data.workspaces.length > 0) {

@@ -40,7 +40,7 @@ Restart=always
 RestartSec=10
 
 # Health check
-HealthCmd=curl -f http://localhost:8080/api/health || exit 1
+HealthCmd=curl -f http://localhost:8081/health || exit 1
 HealthInterval=30s
 HealthTimeout=5s
 HealthRetries=3

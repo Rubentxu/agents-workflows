@@ -449,21 +449,33 @@ kill-server:
     sleep 1
     @echo "Ports cleared"
 
-# Development mode with cargo run (even faster, no binary copy) - non-blocking
+# Development mode: build Studio + backend and run the compiled binary - non-blocking
 dev-run: kill-server
-    @echo "Starting dev server with cargo run (background)..."
+    @echo "Preparing Studio frontend..."
+    @if [ ! -d "{{ ROOT }}/studio/node_modules" ]; then \
+        echo "Installing Studio dependencies..."; \
+        cd {{ ROOT }}/studio && npm install; \
+    fi
+    @echo "Building Studio..."
+    cd {{ ROOT }}/studio && npm run build
+    @mkdir -p {{ WORKSPACE_DIR }}
+    @echo "Building backend binary..."
+    cargo build --release -p mcp-server
+    @echo "Starting dev server with compiled binary (background)..."
     @echo "Logs: ~/.workflows/server.log"
     cd {{ ROOT }} && \
         STUDIO_PATH="{{ ROOT }}/studio/dist" \
         RUST_LOG=debug \
-        nohup cargo run --release -p mcp-server -- start --workspace {{ WORKSPACE_DIR }} --port {{ MCP_PORT }} > ~/.workflows/server.log 2>&1 &
-    sleep 2
-    @if curl -sf http://localhost:{{ MCP_PORT }}/health > /dev/null 2>&1; then \
+        nohup ./target/release/workflow-mcp start --workspace {{ WORKSPACE_DIR }} --port {{ MCP_PORT }} > ~/.workflows/server.log 2>&1 &
+    sleep 3
+    @if curl -sf http://localhost:{{ REST_PORT }}/health > /dev/null 2>&1; then \
         echo "✓ Server running at http://localhost:{{ MCP_PORT }}/studio"; \
-        echo "✓ Health: http://localhost:{{ MCP_PORT }}/health"; \
+        echo "✓ Health: http://localhost:{{ REST_PORT }}/health"; \
+        echo "✓ Studio ready for manual testing"; \
     else \
         echo "✗ Server failed to start. Check logs:"; \
         tail -20 ~/.workflows/server.log; \
+        exit 1; \
     fi
 
 # Rebuild container image and restart service (after code changes)

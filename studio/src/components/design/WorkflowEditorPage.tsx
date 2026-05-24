@@ -1,12 +1,13 @@
 /**
  * WorkflowEditorPage — /studio/projects/:projectId/design/workflows/:workflowId/editor
- * Full-page workflow editor with DAG canvas, inspector, and YAML raw editing.
- * Hybrid: editable DAG canvas + inspector/forms + YAML raw editing.
+ * Full-page workflow editor with DAG canvas as the primary editing surface.
+ * Monaco YAML editor is used for serialization only (not an alternate editor).
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import * as yaml from 'js-yaml';
+import type * as Monaco from 'monaco-editor';
 import {
   ReactFlow,
   Background,
@@ -137,25 +138,6 @@ function workflowToYaml(workflow: Workflow | null): string {
   return yaml.dump(manifest, { indent: 2, lineWidth: -1, noRefs: true });
 }
 
-function manifestToWorkflow(manifest: WorkflowManifest): Workflow {
-  return {
-    arn: `arn:local:${manifest.metadata.scope}:workflow/${manifest.metadata.name}`,
-    name: manifest.metadata.name,
-    version: '1.0',
-    description: manifest.spec.description ?? '',
-    agents: manifest.spec.agents ?? {},
-    skills: manifest.spec.skills ?? {},
-    stages: manifest.spec.stages ?? [],
-    execution: {
-      mode: (manifest.spec.execution?.mode as Workflow['execution']['mode']) ?? 'sequential',
-      stop_on_error: manifest.spec.execution?.stop_on_error ?? true,
-    },
-    metrics: manifest.spec.metrics ?? { streaming: false, interval_ms: 5000, channels: [] },
-  };
-}
-
-type Tab = 'canvas' | 'yaml';
-
 export function WorkflowEditorPage() {
   const { projectId, workflowId } = useParams();
   const [searchParams] = useSearchParams();
@@ -169,10 +151,9 @@ export function WorkflowEditorPage() {
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [loading, setLoading] = useState(!isNew);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('yaml');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [yamlContent, setYamlContent] = useState('');
+  const yamlEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
   // ReactFlow state — typed for StageNodeData
   const [nodes, setNodes, onNodesChange] = useNodesState<StageNode>([]);
@@ -267,43 +248,14 @@ export function WorkflowEditorPage() {
     }
   }, [isNew, workflow, projectId]);
 
-  // Sync workflow stages to nodes/edges when YAML editor applies changes
-  // This enables bidirectional sync: Visual ↔ YAML
+  // Sync workflow stages to nodes/edges
   useEffect(() => {
     if (!workflow) return;
-    // Only sync if we have stages (not initial empty state)
     if (workflow.stages.length > 0) {
       setNodes(buildNodes(workflow.stages, nodes));
       setEdges(buildEdges(workflow.stages));
     }
   }, [workflow?.stages, buildNodes, buildEdges, setNodes, setEdges, nodes]);
-
-  // F-001 fix: Force WorkflowYamlEditor to re-derive yamlContent when switching to YAML tab
-  // This ensures canvas edits are reflected in YAML even if the editor was unmounted
-  const [yamlTabKey, setYamlTabKey] = useState(0);
-  useEffect(() => {
-    if (activeTab === 'yaml') {
-      // Increment key to force WorkflowYamlEditor remount with fresh state
-      // This makes it re-read the workflow prop and sync yamlContent
-      setYamlTabKey((k) => k + 1);
-    }
-  }, [activeTab]);
-
-  // F-004 fix: When switching to canvas tab, parse yamlContent and update workflow
-  // This ensures YAML edits are reflected in canvas when switching tabs
-  useEffect(() => {
-    if (activeTab !== 'canvas' || !yamlContent) return;
-    try {
-      const parsed = yaml.load(yamlContent) as WorkflowManifest;
-      if (!parsed || typeof parsed !== 'object') return;
-      if (!parsed.apiVersion || !parsed.kind || !parsed.metadata || !parsed.spec) return;
-      if (parsed.kind !== 'Workflow') return;
-      const newWorkflow = manifestToWorkflow(parsed);
-      setWorkflow(newWorkflow);
-    } catch {
-      // Ignore parse errors - canvas state is already valid
-    }
-  }, [activeTab, yamlContent]);
 
   const onConnect: OnConnect = useCallback(
     (params: Connection) => {
@@ -317,8 +269,8 @@ export function WorkflowEditorPage() {
     setSaving(true);
     setError(null);
     try {
-      const yamlContent = workflowToYaml(workflow);
-      const success = await updateContent(workflow.arn, yamlContent);
+      const yamlOut = workflowToYaml(workflow);
+      const success = await updateContent(workflow.arn, yamlOut);
       if (!success) {
         setError('Failed to save workflow');
       }
@@ -365,23 +317,6 @@ export function WorkflowEditorPage() {
           </div>
         </div>
 
-        {/* Tab switcher */}
-        <div className="flex items-center gap-1 bg-surface border border-outline-variant rounded p-0.5">
-          {(['canvas', 'yaml'] as Tab[]).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                activeTab === tab
-                  ? 'bg-primary text-on-primary'
-                  : 'text-secondary hover:text-on-surface'
-              }`}
-            >
-              {tab === 'canvas' ? 'Canvas' : 'YAML'}
-            </button>
-          ))}
-        </div>
-
         <div className="flex items-center gap-2">
           <button
             onClick={handleSave}
@@ -400,87 +335,83 @@ export function WorkflowEditorPage() {
         </div>
       )}
 
-      {/* Body */}
+      {/* Body — Canvas primary, inspector + YAML serialization panel */}
       <div className="flex-1 flex overflow-hidden">
-        {activeTab === 'canvas' ? (
-          <>
-            {/* Canvas */}
-            <div className="flex-1">
-              <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                onNodeClick={(_, node) => setSelectedNodeId(node.id === selectedNodeId ? null : node.id)}
-                nodeTypes={nodeTypes}
-                fitView
-                className="bg-background"
-              >
-                <Background gap={16} color="var(--color-border-subtle)" />
-                <Controls className="!border-outline-variant !bg-surface" />
-                <MiniMap
-                  className="!border-outline-variant !bg-surface"
-                  nodeColor={(n) => n.id === selectedNodeId ? 'var(--color-accent)' : 'var(--color-text-muted)'}
-                />
-              </ReactFlow>
-            </div>
+        {/* Canvas */}
+        <div className="flex-1">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={(_, node) => setSelectedNodeId(node.id === selectedNodeId ? null : node.id)}
+            nodeTypes={nodeTypes}
+            fitView
+            className="bg-background"
+          >
+            <Background gap={16} color="var(--color-border-subtle)" />
+            <Controls className="!border-outline-variant !bg-surface" />
+            <MiniMap
+              className="!border-outline-variant !bg-surface"
+              nodeColor={(n) => n.id === selectedNodeId ? 'var(--color-accent)' : 'var(--color-text-muted)'}
+            />
+          </ReactFlow>
+        </div>
 
-            {/* Inspector panel */}
-            {selectedNode ? (
-              <WorkflowInspector
-                node={selectedNode as StageNode}
-                workflow={workflowForInspector(workflow)}
-                onUpdate={(updated) => {
-                  // Update nodes in ReactFlow canvas
-                  setNodes((nds) =>
-                    nds.map((n) =>
-                      n.id === selectedNodeId ? { ...n, data: { ...n.data, ...updated } } : n
-                    )
-                  );
-                  // Also update workflow.stages to keep in sync with visual canvas
-                  if (workflow) {
-                    setWorkflow((prev) => {
-                      if (!prev) return prev;
-                      return {
-                        ...prev,
-                        stages: prev.stages.map((s) =>
-                          s.id === selectedNodeId
-                            ? {
-                                ...s,
-                                id: (updated as { id?: string }).id ?? s.id,
-                                description: (updated as { description?: string }).description ?? s.description,
-                                agent: (updated as { agent?: string }).agent ?? s.agent,
-                                depends_on: (updated as { dependsOn?: string[] }).dependsOn ?? s.depends_on,
-                                execution: {
-                                  ...s.execution,
-                                  ...(updated as { execution?: Partial<Stage['execution']> }).execution,
-                                },
-                              }
-                            : s
-                        ),
-                      };
-                    });
-                  }
-                }}
-                onClose={() => setSelectedNodeId(null)}
-              />
-            ) : (
-              <div className="w-72 border-l border-outline-variant bg-surface-container/20 flex items-center justify-center">
-                <p className="text-secondary text-xs">Select a stage to inspect</p>
-              </div>
-            )}
-          </>
-        ) : (
-          /* YAML tab - key forces remount on tab switch to sync canvas changes */
-          <WorkflowYamlEditor
-            key={yamlTabKey}
-            workflow={workflow}
-            onChange={(updated) => setWorkflow(updated)}
-            onYamlTabActivate={() => {}}
-            onYamlContentChange={(content) => setYamlContent(content)}
+        {/* Inspector panel */}
+        {selectedNode ? (
+          <WorkflowInspector
+            node={selectedNode as StageNode}
+            workflow={workflowForInspector(workflow)}
+            onUpdate={(updated) => {
+              // Update nodes in ReactFlow canvas
+              setNodes((nds) =>
+                nds.map((n) =>
+                  n.id === selectedNodeId ? { ...n, data: { ...n.data, ...updated } } : n
+                )
+              );
+              // Also update workflow.stages to keep in sync with visual canvas
+              if (workflow) {
+                setWorkflow((prev) => {
+                  if (!prev) return prev;
+                  return {
+                    ...prev,
+                    stages: prev.stages.map((s) =>
+                      s.id === selectedNodeId
+                        ? {
+                            ...s,
+                            id: (updated as { id?: string }).id ?? s.id,
+                            description: (updated as { description?: string }).description ?? s.description,
+                            agent: (updated as { agent?: string }).agent ?? s.agent,
+                            depends_on: (updated as { dependsOn?: string[] }).dependsOn ?? s.depends_on,
+                            execution: {
+                              ...s.execution,
+                              ...(updated as { execution?: Partial<Stage['execution']> }).execution,
+                            },
+                          }
+                        : s
+                    ),
+                  };
+                });
+              }
+            }}
+            onClose={() => setSelectedNodeId(null)}
           />
+        ) : (
+          <div className="w-72 border-l border-outline-variant bg-surface-container/20 flex items-center justify-center">
+            <p className="text-secondary text-xs">Select a stage to inspect</p>
+          </div>
         )}
+
+        <div className="w-[420px] border-l border-outline-variant bg-surface-container/10">
+          <WorkflowYamlEditor
+            workflow={workflow}
+            syncEnabled
+            editorRef={yamlEditorRef}
+            readOnly
+          />
+        </div>
       </div>
     </div>
   );

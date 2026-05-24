@@ -1,6 +1,9 @@
 /**
  * EditorLayout — Shell layout for all resource editors (Agent, Skill, Prompt, Template, Tool).
  * Provides consistent header, tab navigation, and error display across all editors.
+ *
+ * Tabs are optional — editors that use Monaco as the sole editing surface
+ * do not pass the tabs prop.
  */
 
 import { type ReactNode } from 'react';
@@ -27,20 +30,20 @@ export interface EditorLayoutProps {
   onDelete?: () => void;
   /** Called when the user clicks the save button */
   onSave?: () => void;
-  /** Tab definitions for the tab navigation bar */
-  tabs: { key: string; label: string }[];
+  /** Tab definitions for the tab navigation bar (optional when Monaco is sole editor) */
+  tabs?: { key: string; label: string }[];
   /** The currently active tab key */
-  activeTab: string;
+  activeTab?: string;
   /** Called when the user switches tabs */
-  onTabChange: (key: string) => void;
-  /** The main content area rendered below the tab bar */
+  onTabChange?: (key: string) => void;
+  /** The main content area rendered below the tab bar (or full-width if no tabs) */
   children: ReactNode;
 }
 
 /**
  * Shell layout used by all five resource editors. Renders a fixed header with
  * back navigation, editable resource name, scope badge, and Save/Delete buttons;
- * a scrollable tabbed body; and an optional error banner.
+ * an optional tabbed body; and an optional error banner.
  */
 export function EditorLayout({
   backLabel,
@@ -117,23 +120,25 @@ export function EditorLayout({
         </div>
       )}
 
-      {/* ── Tab navigation ──────────────────────────────────────────────── */}
-      <nav className="flex px-6 border-b border-outline-variant bg-surface-container/20 shrink-0">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => onTabChange(tab.key)}
-            className={[
-              'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
-              activeTab === tab.key
-                ? 'border-primary text-primary'
-                : 'border-transparent text-secondary hover:text-on-surface',
-            ].join(' ')}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
+      {/* ── Tab navigation (only rendered when tabs are provided) ──────────── */}
+      {tabs && tabs.length > 0 && (
+        <nav className="flex px-6 border-b border-outline-variant bg-surface-container/20 shrink-0">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => onTabChange?.(tab.key)}
+              className={[
+                'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
+                activeTab === tab.key
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-secondary hover:text-on-surface',
+              ].join(' ')}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       {/* ── Scrollable content ─────────────────────────────────────────── */}
       <main className="flex-1 overflow-auto">

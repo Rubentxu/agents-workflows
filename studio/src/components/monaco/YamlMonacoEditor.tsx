@@ -20,6 +20,8 @@ export interface YamlMonacoEditorProps {
   height?: string;
   theme?: 'vs-dark' | 'light';
   onDiagnosticsChange?: (diagnostics: Diagnostic[]) => void;
+  /** Optional external ref to access the Monaco editor instance for programmatic updates */
+  editorRef?: React.RefObject<Monaco.editor.IStandaloneCodeEditor | null>;
 }
 
 export function YamlMonacoEditor({
@@ -29,12 +31,18 @@ export function YamlMonacoEditor({
   readOnly = false,
   height = '100%',
   theme = 'vs-dark',
+  editorRef: externalEditorRef,
 }: YamlMonacoEditorProps) {
-  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const internalEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const configuredRef = useRef(false);
 
   const handleMount: OnMount = (editor, monaco) => {
-    editorRef.current = editor;
+    // Always update internal ref
+    internalEditorRef.current = editor;
+    // Forward to external ref if provided (cast as mutable ref)
+    if (externalEditorRef) {
+      (externalEditorRef as React.MutableRefObject<Monaco.editor.IStandaloneCodeEditor | null>).current = editor;
+    }
 
     if (!configuredRef.current) {
       configuredRef.current = true;

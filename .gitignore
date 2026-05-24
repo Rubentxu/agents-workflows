@@ -41,3 +41,8 @@ Thumbs.db
 # Runtime data
 .workflows/
 .workflows-parallel/
+
+# SDD generated artifacts (HTML reports — regenerate by re-running phases)
+openspec/**/reports/
+openspec/**/state.yaml
+openspec/

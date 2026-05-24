@@ -166,9 +166,10 @@ export function ResourceYamlEditor({
       const result = await validateContent(arn, value);
       const model = editorRef.current?.getModel();
       if (!model) return;
+      const monaco = monacoRef.current;
+      if (!monaco) return;
 
       if (result && !result.valid) {
-        const monaco = monacoRef.current;
         const markers = result.diagnostics.map((d) => ({
           severity: d.severity === 'error'
             ? monaco.MarkerSeverity.Error
@@ -189,7 +190,6 @@ export function ResourceYamlEditor({
         }
       } else {
         // Clear markers on success
-        const monaco = monacoRef.current;
         monaco.editor.setModelMarkers(model, 'validation', []);
         setErrorMessage(null);
       }

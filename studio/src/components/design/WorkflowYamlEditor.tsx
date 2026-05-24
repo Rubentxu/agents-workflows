@@ -27,8 +27,13 @@ interface WorkflowYamlEditorProps {
   workflow: Workflow | null;
   /** JSON Schema for validation */
   schema?: object;
-  /** F-004: Called when yamlContent changes so parent can sync on tab switch */
+  /** Called when yamlContent changes so parent can sync on tab switch */
   onYamlContentChange?: (content: string) => void;
+  /**
+   * Called when YAML parses to a valid manifest.
+   * Parent uses this to update workflow state from YAML edits (YAML → visual path).
+   */
+  onWorkflowChange?: (workflow: Workflow) => void;
   /** Enable unidirectional sync: canvas → Monaco (default: true) */
   syncEnabled?: boolean;
   /** Ref to the Monaco editor instance for programmatic model updates */
@@ -82,6 +87,7 @@ export function WorkflowYamlEditor({
   workflow,
   schema,
   onYamlContentChange,
+  onWorkflowChange,
   syncEnabled = true,
   editorRef,
   readOnly = false,
@@ -118,13 +124,22 @@ export function WorkflowYamlEditor({
 
   const handleYamlChange = useCallback((newValue: string) => {
     // Mark that this change came from Monaco user editing
-    // This tells the sync effect (canvas→Monaco) to skip its update
     isExternalUpdateRef.current = true;
     yamlContentRef.current = newValue;
     setYamlContent(newValue);
     onYamlContentChange?.(newValue);
-    // Note: We do NOT call onChange here - canvas updates go through canvas save only
-  }, [onYamlContentChange]);
+
+    // Try to parse and propagate valid workflow to parent (YAML → visual path)
+    try {
+      const parsed = yaml.load(newValue) as WorkflowManifest | undefined;
+      if (parsed && parsed.kind === 'Workflow' && parsed.spec) {
+        const wf = manifestToWorkflow(parsed);
+        onWorkflowChange?.(wf);
+      }
+    } catch {
+      // Invalid YAML — diagnostics already show the error; do not corrupt visual state
+    }
+  }, [onYamlContentChange, onWorkflowChange]);
 
   const handleDiagnosticsChange = useCallback((newDiagnostics: Diagnostic[]) => {
     setDiagnostics(newDiagnostics);

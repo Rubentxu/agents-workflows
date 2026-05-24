@@ -281,6 +281,17 @@ export function WorkflowEditorPage() {
     }
   }, [workflow, updateContent]);
 
+  // Handle valid YAML edits → update workflow state + canvas nodes/edges
+  const handleYamlWorkflowChange = useCallback(
+    (updatedWorkflow: Workflow) => {
+      setWorkflow(updatedWorkflow);
+      // Update canvas nodes with new stages (preserve existing positions)
+      setNodes(buildNodes(updatedWorkflow.stages, nodes));
+      setEdges(buildEdges(updatedWorkflow.stages));
+    },
+    [nodes, buildNodes, buildEdges, setNodes, setEdges]
+  );
+
   const selectedNode = selectedNodeId ? (nodes.find((n) => n.id === selectedNodeId) ?? null) : null;
 
   if (loading && !isNew) {
@@ -409,7 +420,7 @@ export function WorkflowEditorPage() {
             workflow={workflow}
             syncEnabled
             editorRef={yamlEditorRef}
-            readOnly
+            onWorkflowChange={handleYamlWorkflowChange}
           />
         </div>
       </div>

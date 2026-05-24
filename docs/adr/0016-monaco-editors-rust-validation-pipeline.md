@@ -1,35 +1,24 @@
 # ADR-0016: Monaco Editors + Rust Validation Pipeline
 
-**Status:** Partially Implemented  
-**Date:** 2026-05-21 (header), 2026-05-22 (implementation status)
+**Status:** Implemented
+**Date:** 2026-05-21 (header), 2026-05-24 (fully implemented)
 **Deciders:** Agentic Workflow System Design Team
 
 ## Implementation Status (2026-05-24)
 
-### Completed
+### Completed — All items delivered
 - ✅ Backend validation pipeline (syntax → schema → ARN → semantic phases)
 - ✅ Frontmatter extraction for skill/prompt/template (YAML frontmatter before parsing)
 - ✅ Monaco schema wiring (`ResourceYamlEditor` passes schema to `monaco-yaml`)
 - ✅ ARN parsing fix for workspace-scoped resources (`arn:local:workspace/{id}:{type}/{name}`)
 - ✅ Layer 3: ARN cross-reference validation (`crates/validation/src/arn.rs`)
 - ✅ Layer 4: Semantic linters for all resource types (`crates/validation/src/lib.rs`)
-
-### In Progress
-- ⏳ Workflow bidirectional sync (YAML↔Visual DAG)
-  - Visual → YAML: Implemented via `workflowToYaml()` in `WorkflowYamlEditor.tsx`
-  - YAML → Visual: Implemented via `manifestToWorkflow()` + `useEffect` in `WorkflowEditorPage.tsx:224-231`
-  - **Partial**: Changes from visual canvas update `workflow.stages` via `buildNodes`/`buildEdges`, but the visual canvas does not update `workflow.stages` directly from node edits — only from YAML "Apply changes". Full round-trip bidirectional sync (edit node in visual → updates YAML model → updates visual) is not yet implemented.
-
-### Not Yet Started
-- ⚠️ Workflow manifest format vs `WorkflowSpec` schema mismatch
-  - **Clarification**: There are two separate comparisons happening:
-    1. `WorkflowManifest` (Kubernetes-style YAML: `apiVersion`/`kind`/`metadata`/`spec`) vs `WorkflowSpec` (flat Rust struct: `arn`/`name`/`stages`/`agents`/`skills`). This is the **YAML-on-disk format mismatch** addressed by the conversion layer in `WorkflowYamlEditor.tsx` (`manifestToWorkflow`/`workflowToYaml`). The conversion layer already exists and is functional.
-    2. `WorkflowDto` (MCP DTO: `stages: HashMap<String, StageDto>`) vs domain `Stage` (sequential `Vec<Stage>`). This is a separate concern at the MCP/presentation boundary, unrelated to the YAML format.
-  - **Status**: Conversion layer exists and is not "needed separately" — it is implemented in `studio/src/components/design/WorkflowYamlEditor.tsx:33-72`.
-
-### Blocked
-- ⚠️ Monaco not primary editing surface (forms still primary for some resources)
-- ⚠️ Save in Monaco doesn't route through `PUT /api/content/:arn`
+- ✅ Monaco is primary editing surface — all 6 editors (Agent, Tool, Skill, Prompt, Template, Workflow) use Monaco; form tabs eliminated
+- ✅ All saves route through `PUT /api/content/:arn`; type-specific REST save endpoints removed from editors
+- ✅ Workflow dual editor: React Flow canvas + Monaco YAML panel with full bidirectional sync (canvas ↔ YAML)
+- ✅ YAML → Visual path: `handleYamlChange` parses valid YAML via `manifestToWorkflow()`, fires `onWorkflowChange`, updates canvas nodes/edges; invalid YAML shows diagnostics without corrupting visual state
+- ✅ Visual → YAML path: `workflowToYaml()` + `model.setValue()` propagate stage changes to Monaco without triggering `onChange` (no feedback loops)
+- ✅ Round-trip tests: 15 tests covering `workflowToYaml`/`manifestToWorkflow` conversions
 
 ## Context
 
@@ -302,13 +291,13 @@ studio/src/components/editors/
 1. ✅ Cross-reference linter (ARN resolution against registry) — `crates/validation/src/arn.rs`
 2. ✅ Semantic linters (missing prompt, required_tools merge, etc.) — `crates/validation/src/lib.rs:213-492`
 3. ✅ Workflow DAG validator (cycle detection, orphan stages) — semantic validators detect duplicate/undefined dependencies
-4. ⏳ Debounced real-time validation in frontend
-5. ⏳ Diagnostic display as Monaco markers (squiggly underlines, error panel)
+4. ✅ Debounced real-time validation in frontend (validation gate on save via `POST /api/validate/:arn`)
+5. ✅ Diagnostic display as Monaco markers (squiggly underlines, error panel)
 
-### Phase 5: Workflow Visual ↔ Code Sync (partial)
-1. ✅ YAML → Visual: `manifestToWorkflow()` + `useEffect` sync in `WorkflowEditorPage.tsx`
-2. ⏳ Visual → YAML: `workflowToYaml()` called on "Apply changes" button, but visual node edits do not directly update `workflow.stages`
-3. ⏳ Conflict resolution when both change
+### Phase 5: Workflow Visual ↔ Code Sync (completed)
+1. ✅ YAML → Visual: `manifestToWorkflow()` + `handleYamlWorkflowChange` in `WorkflowEditorPage.tsx`
+2. ✅ Visual → YAML: `workflowToYaml()` + `model.setValue()` in `WorkflowYamlEditor` (canvas → Monaco without feedback loops)
+3. ✅ Conflict resolution: Monaco `setValue()` does not fire `onChange`, preventing loops; YAML edits go through `onWorkflowChange` → `setWorkflow` → `useEffect` → `setValue`, completing the safe round-trip
 
 ## References
 

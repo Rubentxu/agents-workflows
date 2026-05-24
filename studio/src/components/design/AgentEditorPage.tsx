@@ -6,8 +6,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import yaml from 'js-yaml';
 import { restApiUrl } from '@/lib/apiBase';
-import * as yaml from 'js-yaml';
+import { useContent } from '@/hooks/useContent';
 import {
   EditorLayout,
   FormField,
@@ -62,10 +63,10 @@ const THEME_COLORS = [
 type TabId = 'config' | 'resources' | 'permissions' | 'yaml';
 
 const TABS: { key: string; label: string }[] = [
+  { key: 'yaml', label: 'YAML Preview' },
   { key: 'config', label: 'Configuration' },
   { key: 'resources', label: 'Resources' },
   { key: 'permissions', label: 'Permissions' },
-  { key: 'yaml', label: 'YAML Preview' },
 ];
 
 // ============================================================================
@@ -151,13 +152,14 @@ function MiniDependencyGraph({ agent }: MiniDependencyGraphProps) {
 export function AgentEditorPage() {
   const { projectId, agentId } = useParams();
   const navigate = useNavigate();
+  const { updateContent } = useContent();
 
   const isNew = !agentId || agentId === 'new';
   const arn = isNew
     ? `arn:local:project/${projectId}:agent/new`
     : `arn:local:project/${projectId}:agent/${agentId}`;
 
-  const [activeTab, setActiveTab] = useState<TabId>('config');
+  const [activeTab, setActiveTab] = useState<TabId>('yaml');
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -252,6 +254,34 @@ export function AgentEditorPage() {
   useEffect(() => {
     fetchAgent();
   }, [fetchAgent]);
+
+  // F-004 fix: When switching to config tab, derive form state from YAML content
+  useEffect(() => {
+    if (activeTab !== 'config' || !yamlContent) return;
+    try {
+      const parsed = yaml.load(yamlContent) as Record<string, unknown>;
+      if (!parsed || typeof parsed !== 'object') return;
+      // Extract spec from parsed YAML (handles both direct spec and wrapped format)
+      const spec = (parsed.spec as Record<string, unknown>) ?? parsed;
+      if (spec.name !== undefined) setName(spec.name as string);
+      if (spec.description !== undefined) setDescription(spec.description as string);
+      if (spec.model !== undefined) setModel(spec.model as string);
+      if (spec.prompt !== undefined) setPrompt(spec.prompt as string);
+      if (spec.skills !== undefined) setSkills(spec.skills as string[]);
+      if (spec.tools !== undefined) setTools(spec.tools as Record<string, boolean>);
+      if (spec.permission !== undefined) setPermission(spec.permission as Record<string, unknown>);
+      if (spec.temperature !== undefined) setTemperature(spec.temperature as number);
+      if (spec.top_p !== undefined) setTopP(spec.top_p as number | null);
+      if (spec.steps !== undefined) setSteps(spec.steps as number);
+      if (spec.mode !== undefined) setMode(spec.mode as AgentMode);
+      if (spec.hidden !== undefined) setHidden(spec.hidden as boolean);
+      if (spec.color !== undefined) setColor(spec.color as string);
+      if (spec.variant !== undefined) setVariant(spec.variant as string | null);
+      if (spec.options !== undefined) setOptions(spec.options as Record<string, unknown>);
+    } catch {
+      // Ignore parse errors - form state is already valid
+    }
+  }, [activeTab, yamlContent]);
 
   // Build current spec from form state
   const buildSpec = useCallback((): AgentSpec => {
@@ -670,32 +700,10 @@ export function AgentEditorPage() {
         <div className="h-full min-h-[500px]">
           <ResourceYamlEditor
             arn={arn}
-            initialValue={yamlContent || yaml.dump(buildSpec())}
+            initialValue={yamlContent}
             onChange={(value) => setYamlContent(value)}
             onSave={async (value) => {
-              try {
-                const parsed = yaml.load(value) as Record<string, unknown>;
-                // Update form state from parsed YAML
-                if (parsed.name !== undefined) setName(parsed.name as string);
-                if (parsed.description !== undefined) setDescription(parsed.description as string);
-                if (parsed.model !== undefined) setModel(parsed.model as string);
-                if (parsed.prompt !== undefined) setPrompt(parsed.prompt as string);
-                if (parsed.skills !== undefined) setSkills(parsed.skills as string[]);
-                if (parsed.tools !== undefined) setTools(parsed.tools as Record<string, boolean>);
-                if (parsed.permission !== undefined) setPermission(parsed.permission as Record<string, unknown>);
-                if (parsed.temperature !== undefined) setTemperature(parsed.temperature as number);
-                if (parsed.top_p !== undefined) setTopP(parsed.top_p as number);
-                if (parsed.steps !== undefined) setSteps(parsed.steps as number);
-                if (parsed.mode !== undefined) setMode(parsed.mode as AgentMode);
-                if (parsed.hidden !== undefined) setHidden(parsed.hidden as boolean);
-                if (parsed.color !== undefined) setColor(parsed.color as string);
-                if (parsed.variant !== undefined) setVariant(parsed.variant as string | null);
-                if (parsed.options !== undefined) setOptions(parsed.options as Record<string, unknown>);
-                // Switch to config tab to see changes and save
-                setActiveTab('config');
-              } catch (err) {
-                console.error('Failed to parse YAML:', err);
-              }
+              await updateContent(arn, value);
             }}
           />
         </div>

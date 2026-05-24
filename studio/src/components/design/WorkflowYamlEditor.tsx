@@ -13,7 +13,7 @@
  *     execution: { mode: ... }
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import yaml from 'js-yaml';
 import type { Workflow } from '@/types/workflow';
 import type { WorkflowManifest } from '@/types/manifest.workflow';
@@ -28,6 +28,10 @@ interface WorkflowYamlEditorProps {
   onChange: (updated: Workflow) => void;
   /** JSON Schema for validation */
   schema?: object;
+  /** Called when the YAML tab is activated */
+  onYamlTabActivate?: () => void;
+  /** F-004: Called when yamlContent changes so parent can sync on tab switch */
+  onYamlContentChange?: (content: string) => void;
 }
 
 function manifestToWorkflow(manifest: WorkflowManifest): Workflow {
@@ -71,19 +75,29 @@ function workflowToYaml(workflow: Workflow | null): string {
   return yaml.dump(manifest, { indent: 2, lineWidth: -1, noRefs: true });
 }
 
-export function WorkflowYamlEditor({ workflow, onChange, schema }: WorkflowYamlEditorProps) {
+export function WorkflowYamlEditor({ workflow, onChange, schema, onYamlTabActivate, onYamlContentChange }: WorkflowYamlEditorProps) {
   const [yamlContent, setYamlContent] = useState('');
   const [parseError, setParseError] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
+  const isYamlTabActiveRef = useRef(true);
 
   useEffect(() => {
+    onYamlTabActivate?.();
+    isYamlTabActiveRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!isYamlTabActiveRef.current) return;
     setYamlContent(workflowToYaml(workflow));
     setParseError(null);
-  }, [workflow]);
+    onYamlContentChange?.(workflowToYaml(workflow));
+  }, [workflow, onYamlContentChange]);
 
   const handleYamlChange = useCallback((newValue: string) => {
+    isYamlTabActiveRef.current = false;
     setYamlContent(newValue);
-  }, []);
+    onYamlContentChange?.(newValue);
+  }, [onYamlContentChange]);
 
   const handleDiagnosticsChange = useCallback((newDiagnostics: Diagnostic[]) => {
     setDiagnostics(newDiagnostics);

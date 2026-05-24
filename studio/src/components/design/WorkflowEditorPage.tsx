@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import * as yaml from 'js-yaml';
 import {
   ReactFlow,
   Background,
@@ -23,14 +24,15 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { useMcpTools } from '@/hooks/useMcpTools';
-import { useResourceApi } from '@/hooks/useResourceApi';
+import { useContent } from '@/hooks/useContent';
 import { WorkflowStageNode, type StageNodeData } from './nodes/WorkflowStageNode';
 import { WorkflowInspector } from './inspector/WorkflowInspector';
 import { WorkflowYamlEditor } from './WorkflowYamlEditor';
 import { LoadingState } from '@/components/states/LoadingState';
 
 import type { Workflow } from '@/types/workflow';
-import type { WorkflowSpec, Stage } from '@/types/manifest.workflow';
+import type { WorkflowSpec, Stage, WorkflowManifest } from '@/types/manifest.workflow';
+import { API_VERSION } from '@/types/manifest';
 
 type WorkflowStatus = 'draft' | 'published' | 'deprecated' | 'archived';
 
@@ -111,6 +113,47 @@ const nodeTypes: NodeTypes = {
   stage: WorkflowStageNode,
 };
 
+function workflowToYaml(workflow: Workflow | null): string {
+  if (!workflow) return '';
+  const manifest: WorkflowManifest = {
+    apiVersion: API_VERSION,
+    kind: 'Workflow',
+    metadata: {
+      uid: '',
+      name: workflow.name,
+      scope: 'global',
+      labels: {},
+      annotations: {},
+    },
+    spec: {
+      description: workflow.description,
+      stages: workflow.stages,
+      agents: workflow.agents,
+      skills: workflow.skills,
+      execution: workflow.execution as unknown as { mode: string; stop_on_error: boolean },
+      metrics: workflow.metrics as { streaming: boolean; interval_ms: number; channels: string[] },
+    },
+  };
+  return yaml.dump(manifest, { indent: 2, lineWidth: -1, noRefs: true });
+}
+
+function manifestToWorkflow(manifest: WorkflowManifest): Workflow {
+  return {
+    arn: `arn:local:${manifest.metadata.scope}:workflow/${manifest.metadata.name}`,
+    name: manifest.metadata.name,
+    version: '1.0',
+    description: manifest.spec.description ?? '',
+    agents: manifest.spec.agents ?? {},
+    skills: manifest.spec.skills ?? {},
+    stages: manifest.spec.stages ?? [],
+    execution: {
+      mode: (manifest.spec.execution?.mode as Workflow['execution']['mode']) ?? 'sequential',
+      stop_on_error: manifest.spec.execution?.stop_on_error ?? true,
+    },
+    metrics: manifest.spec.metrics ?? { streaming: false, interval_ms: 5000, channels: [] },
+  };
+}
+
 type Tab = 'canvas' | 'yaml';
 
 export function WorkflowEditorPage() {
@@ -118,7 +161,7 @@ export function WorkflowEditorPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { getResourceByArn } = useMcpTools();
-  const { createResource, updateResource } = useResourceApi();
+  const { updateContent } = useContent();
 
   const isNew = !workflowId || workflowId === 'new';
   const arn = searchParams.get('arn');
@@ -126,29 +169,34 @@ export function WorkflowEditorPage() {
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [loading, setLoading] = useState(!isNew);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('canvas');
+  const [activeTab, setActiveTab] = useState<Tab>('yaml');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [yamlContent, setYamlContent] = useState('');
 
   // ReactFlow state — typed for StageNodeData
   const [nodes, setNodes, onNodesChange] = useNodesState<StageNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Build ReactFlow nodes from workflow stages
-  const buildNodes = useCallback((stages: WorkflowSpec['stages'] = []): StageNode[] => {
-    return stages.map((stage, index) => ({
-      id: stage.id,
-      type: 'stage' as const,
-      position: { x: (index % 4) * 250, y: Math.floor(index / 4) * 150 },
-      data: {
+  // Build ReactFlow nodes from workflow stages, preserving existing positions
+  const buildNodes = useCallback((stages: WorkflowSpec['stages'] = [], existingNodes: StageNode[] = []): StageNode[] => {
+    const existingPositions = new Map(existingNodes.map((n) => [n.id, n.position]));
+    return stages.map((stage, index) => {
+      const existingPos = existingPositions.get(stage.id);
+      return {
         id: stage.id,
-        label: stage.id,
-        description: stage.description,
-        agent: stage.agent,
-        dependsOn: stage.depends_on,
-        executionMode: stage.execution?.mode,
-      } as StageNodeData,
-    }));
+        type: 'stage' as const,
+        position: existingPos ?? { x: (index % 4) * 250, y: Math.floor(index / 4) * 150 },
+        data: {
+          id: stage.id,
+          label: stage.id,
+          description: stage.description,
+          agent: stage.agent,
+          dependsOn: stage.depends_on,
+          executionMode: stage.execution?.mode,
+        } as StageNodeData,
+      };
+    });
   }, []);
 
   // Build ReactFlow edges from stage dependencies
@@ -225,10 +273,37 @@ export function WorkflowEditorPage() {
     if (!workflow) return;
     // Only sync if we have stages (not initial empty state)
     if (workflow.stages.length > 0) {
-      setNodes(buildNodes(workflow.stages));
+      setNodes(buildNodes(workflow.stages, nodes));
       setEdges(buildEdges(workflow.stages));
     }
-  }, [workflow?.stages, buildNodes, buildEdges, setNodes, setEdges]);
+  }, [workflow?.stages, buildNodes, buildEdges, setNodes, setEdges, nodes]);
+
+  // F-001 fix: Force WorkflowYamlEditor to re-derive yamlContent when switching to YAML tab
+  // This ensures canvas edits are reflected in YAML even if the editor was unmounted
+  const [yamlTabKey, setYamlTabKey] = useState(0);
+  useEffect(() => {
+    if (activeTab === 'yaml') {
+      // Increment key to force WorkflowYamlEditor remount with fresh state
+      // This makes it re-read the workflow prop and sync yamlContent
+      setYamlTabKey((k) => k + 1);
+    }
+  }, [activeTab]);
+
+  // F-004 fix: When switching to canvas tab, parse yamlContent and update workflow
+  // This ensures YAML edits are reflected in canvas when switching tabs
+  useEffect(() => {
+    if (activeTab !== 'canvas' || !yamlContent) return;
+    try {
+      const parsed = yaml.load(yamlContent) as WorkflowManifest;
+      if (!parsed || typeof parsed !== 'object') return;
+      if (!parsed.apiVersion || !parsed.kind || !parsed.metadata || !parsed.spec) return;
+      if (parsed.kind !== 'Workflow') return;
+      const newWorkflow = manifestToWorkflow(parsed);
+      setWorkflow(newWorkflow);
+    } catch {
+      // Ignore parse errors - canvas state is already valid
+    }
+  }, [activeTab, yamlContent]);
 
   const onConnect: OnConnect = useCallback(
     (params: Connection) => {
@@ -242,32 +317,8 @@ export function WorkflowEditorPage() {
     setSaving(true);
     setError(null);
     try {
-      const body = {
-        description: workflow.description,
-        stages: workflow.stages.map((s) => ({
-          id: s.id,
-          agent: s.agent,
-          depends_on: s.depends_on,
-          description: s.description,
-          input: s.input,
-          execution: { mode: s.execution.mode, retry: s.execution.retry },
-          conditions: s.conditions,
-        })),
-        execution: workflow.execution,
-      };
-
-      let success = false;
-      if (isNew) {
-        const arn = await createResource('workflow', {
-          scope: 'global',
-          name: workflow.name,
-          ...body,
-        });
-        success = !!arn;
-      } else {
-        success = await updateResource(workflow.arn, body);
-      }
-
+      const yamlContent = workflowToYaml(workflow);
+      const success = await updateContent(workflow.arn, yamlContent);
       if (!success) {
         setError('Failed to save workflow');
       }
@@ -276,7 +327,7 @@ export function WorkflowEditorPage() {
     } finally {
       setSaving(false);
     }
-  }, [workflow, isNew, createResource, updateResource]);
+  }, [workflow, updateContent]);
 
   const selectedNode = selectedNodeId ? (nodes.find((n) => n.id === selectedNodeId) ?? null) : null;
 
@@ -401,6 +452,10 @@ export function WorkflowEditorPage() {
                                 description: (updated as { description?: string }).description ?? s.description,
                                 agent: (updated as { agent?: string }).agent ?? s.agent,
                                 depends_on: (updated as { dependsOn?: string[] }).dependsOn ?? s.depends_on,
+                                execution: {
+                                  ...s.execution,
+                                  ...(updated as { execution?: Partial<Stage['execution']> }).execution,
+                                },
                               }
                             : s
                         ),
@@ -417,10 +472,13 @@ export function WorkflowEditorPage() {
             )}
           </>
         ) : (
-          /* YAML tab */
+          /* YAML tab - key forces remount on tab switch to sync canvas changes */
           <WorkflowYamlEditor
+            key={yamlTabKey}
             workflow={workflow}
             onChange={(updated) => setWorkflow(updated)}
+            onYamlTabActivate={() => {}}
+            onYamlContentChange={(content) => setYamlContent(content)}
           />
         )}
       </div>

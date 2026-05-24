@@ -6,8 +6,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import yaml from 'js-yaml';
 import { restApiUrl } from '@/lib/apiBase';
-import * as yaml from 'js-yaml';
+import { useContent } from '@/hooks/useContent';
 import { EditorLayout, FormField, TagInput } from './shared';
 import { ResourceYamlEditor } from '@/components/monaco';
 
@@ -18,10 +19,10 @@ import { ResourceYamlEditor } from '@/components/monaco';
 type TabId = 'config' | 'schema' | 'source' | 'yaml';
 
 const TABS: { key: string; label: string }[] = [
+  { key: 'yaml', label: 'YAML Preview' },
   { key: 'config', label: 'Configuration' },
   { key: 'schema', label: 'Schema' },
   { key: 'source', label: 'Source' },
-  { key: 'yaml', label: 'YAML Preview' },
 ];
 
 // ============================================================================
@@ -31,20 +32,6 @@ const TABS: { key: string; label: string }[] = [
 type SourceType = 'mcp' | 'builtin' | 'custom';
 type ToolCategory = 'core' | 'search' | 'debugging' | 'quality' | 'code-intelligence' | 'testing' | 'memory' | 'web' | 'mcp' | 'custom';
 type Runtime = 'bash' | 'node' | 'python';
-
-interface ToolSpec {
-  name: string;
-  description?: string;
-  source?: string;
-  source_type?: SourceType;
-  input_schema?: Record<string, unknown>;
-  output_schema?: Record<string, unknown> | null;
-  category?: ToolCategory;
-  tags?: string[];
-  implementation_path?: string | null;
-  runtime?: Runtime | null;
-  scope?: string;
-}
 
 interface ToolData {
   id: string;
@@ -100,6 +87,7 @@ function extractYamlSpec(config: string): Record<string, unknown> {
 export function ToolEditorPage() {
   const { projectId, toolId } = useParams();
   const navigate = useNavigate();
+  const { updateContent } = useContent();
 
   const isNew = !toolId || toolId === 'new';
   const scope = 'global';
@@ -107,7 +95,7 @@ export function ToolEditorPage() {
     ? `arn:local:${scope}:tool/new`
     : `arn:local:${scope}:tool/${toolId}`;
 
-  const [activeTab, setActiveTab] = useState<TabId>('config');
+  const [activeTab, setActiveTab] = useState<TabId>('yaml');
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -185,6 +173,26 @@ export function ToolEditorPage() {
     fetchTool();
   }, [fetchTool]);
 
+  // F-004 fix: When switching to config tab, derive form state from YAML content
+  useEffect(() => {
+    if (activeTab !== 'config' || !yamlContent) return;
+    try {
+      const parsed = yaml.load(yamlContent) as Record<string, unknown>;
+      if (!parsed || typeof parsed !== 'object') return;
+      const spec = (parsed.spec as Record<string, unknown>) ?? parsed;
+      if (spec.name !== undefined) setName(spec.name as string);
+      if (spec.description !== undefined) setDescription(spec.description as string);
+      if (spec.source_type !== undefined) setSourceType(spec.source_type as SourceType);
+      if (spec.source !== undefined) setSource(spec.source as string);
+      if (spec.category !== undefined) setCategory(spec.category as ToolCategory);
+      if (spec.tags !== undefined) setTags(spec.tags as string[]);
+      if (spec.implementation_path !== undefined) setImplementationPath(spec.implementation_path as string);
+      if (spec.runtime !== undefined) setRuntime(spec.runtime as Runtime);
+    } catch {
+      // Ignore parse errors
+    }
+  }, [activeTab, yamlContent]);
+
   // Handle input schema change
   const handleInputSchemaChange = (val: string) => {
     setInputSchemaJson(val);
@@ -210,64 +218,6 @@ export function ToolEditorPage() {
       setOutputSchemaError('Invalid JSON');
     }
   };
-
-  // Build current spec from form state
-  const buildSpec = useCallback((): ToolSpec => {
-    const spec: ToolSpec = {
-      name,
-      description: description || undefined,
-      source_type: sourceType,
-      category: category !== 'core' ? category : undefined,
-      tags: tags.length > 0 ? tags : undefined,
-      scope,
-    };
-
-    if (source) {
-      spec.source = source;
-    }
-
-    if (!inputSchemaError) {
-      try {
-        spec.input_schema = JSON.parse(inputSchemaJson);
-      } catch {
-        // Ignore
-      }
-    }
-
-    if (outputSchemaJson.trim() && !outputSchemaError) {
-      try {
-        spec.output_schema = JSON.parse(outputSchemaJson);
-      } catch {
-        // Ignore
-      }
-    } else {
-      spec.output_schema = null;
-    }
-
-    if (sourceType === 'custom') {
-      spec.implementation_path = implementationPath || null;
-      spec.runtime = runtime;
-    } else {
-      spec.implementation_path = null;
-      spec.runtime = null;
-    }
-
-    return spec;
-  }, [
-    name,
-    description,
-    sourceType,
-    source,
-    category,
-    tags,
-    inputSchemaJson,
-    inputSchemaError,
-    outputSchemaJson,
-    outputSchemaError,
-    implementationPath,
-    runtime,
-    scope,
-  ]);
 
   // Save handler
   const handleSave = useCallback(async () => {
@@ -582,25 +532,10 @@ export function ToolEditorPage() {
         <div className="h-full min-h-[500px]">
           <ResourceYamlEditor
             arn={arn}
-            initialValue={yamlContent || yaml.dump(buildSpec())}
+            initialValue={yamlContent}
             onChange={(value) => setYamlContent(value)}
             onSave={async (value) => {
-              try {
-                const parsed = yaml.load(value) as Record<string, unknown>;
-                if (parsed.name !== undefined) setName(parsed.name as string);
-                if (parsed.description !== undefined) setDescription(parsed.description as string);
-                if (parsed.source_type !== undefined) setSourceType(parsed.source_type as SourceType);
-                if (parsed.source !== undefined) setSource(parsed.source as string);
-                if (parsed.category !== undefined) setCategory(parsed.category as ToolCategory);
-                if (parsed.tags !== undefined) setTags(parsed.tags as string[]);
-                if (parsed.implementation_path !== undefined) setImplementationPath(parsed.implementation_path as string);
-                if (parsed.runtime !== undefined) setRuntime(parsed.runtime as Runtime);
-                if (parsed.input_schema !== undefined) setInputSchemaJson(JSON.stringify(parsed.input_schema, null, 2));
-                if (parsed.output_schema !== undefined) setOutputSchemaJson(JSON.stringify(parsed.output_schema, null, 2));
-                setActiveTab('config');
-              } catch (err) {
-                console.error('Failed to parse YAML:', err);
-              }
+              await updateContent(arn, value);
             }}
           />
         </div>

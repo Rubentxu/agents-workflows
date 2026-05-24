@@ -6,7 +6,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import yaml from 'js-yaml';
 import { restApiUrl } from '@/lib/apiBase';
+import { useContent } from '@/hooks/useContent';
 import { EditorLayout, FormField, TagInput } from './shared';
 import { MarkdownResourceEditor } from '@/components/monaco';
 
@@ -17,10 +19,10 @@ import { MarkdownResourceEditor } from '@/components/monaco';
 type TabId = 'config' | 'content' | 'tools' | 'yaml';
 
 const TABS: { key: string; label: string }[] = [
+  { key: 'yaml', label: 'YAML Preview' },
   { key: 'config', label: 'Configuration' },
   { key: 'content', label: 'Content' },
   { key: 'tools', label: 'Tools & References' },
-  { key: 'yaml', label: 'YAML Preview' },
 ];
 
 // ============================================================================
@@ -81,6 +83,7 @@ function extractYamlSpec(config: string): Record<string, unknown> {
 export function SkillEditorPage() {
   const { projectId, skillId } = useParams();
   const navigate = useNavigate();
+  const { updateContent } = useContent();
 
   const isNew = !skillId || skillId === 'new';
   const scope = 'global';
@@ -88,7 +91,7 @@ export function SkillEditorPage() {
     ? `arn:local:${scope}:skill/new`
     : `arn:local:${scope}:skill/${skillId}`;
 
-  const [activeTab, setActiveTab] = useState<TabId>('config');
+  const [activeTab, setActiveTab] = useState<TabId>('yaml');
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -159,6 +162,33 @@ export function SkillEditorPage() {
   useEffect(() => {
     fetchSkill();
   }, [fetchSkill]);
+
+  // F-004 fix: When switching to config/content/tools tabs, derive form state from markdown content
+  useEffect(() => {
+    if (activeTab === 'yaml' || !markdownContent) return;
+    try {
+      const lines = markdownContent.split('\n');
+      if (lines[0]?.trim() !== '---') return;
+      const endIndex = lines.slice(1).findIndex((line) => line.trim() === '---');
+      if (endIndex === -1) return;
+      const frontmatter = lines.slice(1, endIndex + 1).join('\n');
+      const parsed = yaml.load(frontmatter) as Record<string, unknown>;
+      if (!parsed || typeof parsed !== 'object') return;
+      if (parsed.name !== undefined) setName(parsed.name as string);
+      if (parsed.description !== undefined) setDescription(parsed.description as string);
+      if (parsed.content_path !== undefined) setContentPath(parsed.content_path as string);
+      if (parsed.content !== undefined) setInlineContent(parsed.content as string);
+      if (parsed.version !== undefined) setVersion(parsed.version as string);
+      if (parsed.author !== undefined) setAuthor(parsed.author as string);
+      if (parsed.license !== undefined) setLicense(parsed.license as string);
+      if (parsed.required_tools !== undefined) setRequiredTools(parsed.required_tools as string[]);
+      if (parsed.references !== undefined) setReferences(parsed.references as string[]);
+      if (parsed.triggers !== undefined) setTriggers(parsed.triggers as string[]);
+      setUseInlineContent(!parsed.content_path && !!parsed.content);
+    } catch {
+      // Ignore parse errors
+    }
+  }, [activeTab, markdownContent]);
 
   // Save handler
   const handleSave = useCallback(async () => {
@@ -424,63 +454,7 @@ export function SkillEditorPage() {
             initialValue={markdownContent}
             onChange={(value) => setMarkdownContent(value)}
             onSave={async (value) => {
-              // For skills, the entire file is markdown with frontmatter
-              // The frontmatter fields need to be synced to form state
-              const lines = value.split('\n');
-              const frontmatterLines: string[] = [];
-              let bodyLines: string[] = [];
-              let inFrontmatter = false;
-
-              for (const line of lines) {
-                if (line.trim() === '---') {
-                  if (!inFrontmatter) {
-                    inFrontmatter = true;
-                    continue;
-                  } else {
-                    break;
-                  }
-                }
-                if (inFrontmatter) {
-                  frontmatterLines.push(line);
-                } else {
-                  bodyLines.push(line);
-                }
-              }
-
-              // Parse frontmatter
-              const frontmatter: Record<string, unknown> = {};
-              for (const fl of frontmatterLines) {
-                const match = fl.match(/^(\w+):\s*(.*)$/);
-                if (match) {
-                  const [, key, val] = match;
-                  frontmatter[key] = val;
-                }
-              }
-
-              // Update form state from frontmatter
-              if (frontmatter.name !== undefined) setName(frontmatter.name as string);
-              if (frontmatter.description !== undefined) setDescription(frontmatter.description as string);
-              if (frontmatter.version !== undefined) setVersion(frontmatter.version as string);
-              if (frontmatter.author !== undefined) setAuthor(frontmatter.author as string);
-              if (frontmatter.license !== undefined) setLicense(frontmatter.license as string);
-              if (frontmatter.triggers !== undefined) {
-                const triggers = String(frontmatter.triggers).split(',').map((t: string) => t.trim());
-                setTriggers(triggers);
-              }
-              if (frontmatter.required_tools !== undefined) {
-                const tools = String(frontmatter.required_tools).split(',').map((t: string) => t.trim());
-                setRequiredTools(tools);
-              }
-              if (frontmatter.references !== undefined) {
-                const refs = String(frontmatter.references).split(',').map((t: string) => t.trim());
-                setReferences(refs);
-              }
-
-              // Content goes to inlineContent if using inline
-              setInlineContent(bodyLines.join('\n').trim());
-              setUseInlineContent(true);
-
-              setActiveTab('config');
+              await updateContent(arn, value);
             }}
           />
         </div>

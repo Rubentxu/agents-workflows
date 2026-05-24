@@ -6,7 +6,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import yaml from 'js-yaml';
 import { restApiUrl } from '@/lib/apiBase';
+import { useContent } from '@/hooks/useContent';
 import { EditorLayout, FormField } from './shared';
 import { MarkdownResourceEditor } from '@/components/monaco';
 
@@ -17,10 +19,10 @@ import { MarkdownResourceEditor } from '@/components/monaco';
 type TabId = 'config' | 'content' | 'variables' | 'yaml';
 
 const TABS: { key: string; label: string }[] = [
+  { key: 'yaml', label: 'YAML Preview' },
   { key: 'config', label: 'Configuration' },
   { key: 'content', label: 'Content' },
   { key: 'variables', label: 'Variables' },
-  { key: 'yaml', label: 'YAML Preview' },
 ];
 
 // ============================================================================
@@ -137,6 +139,7 @@ const FORMAT_PLACEHOLDERS: Record<TemplateFormat, string> = {
 export function TemplateEditorPage() {
   const { projectId, templateId } = useParams();
   const navigate = useNavigate();
+  const { updateContent } = useContent();
 
   const isNew = !templateId || templateId === 'new';
   const scope = 'global';
@@ -144,7 +147,7 @@ export function TemplateEditorPage() {
     ? `arn:local:${scope}:template/new`
     : `arn:local:${scope}:template/${templateId}`;
 
-  const [activeTab, setActiveTab] = useState<TabId>('config');
+  const [activeTab, setActiveTab] = useState<TabId>('yaml');
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -205,6 +208,28 @@ export function TemplateEditorPage() {
   useEffect(() => {
     fetchTemplate();
   }, [fetchTemplate]);
+
+  // F-004 fix: When switching to config/content/variables tabs, derive form state from markdown content
+  useEffect(() => {
+    if (activeTab === 'yaml' || !markdownContent) return;
+    try {
+      const lines = markdownContent.split('\n');
+      if (lines[0]?.trim() !== '---') return;
+      const endIndex = lines.slice(1).findIndex((line) => line.trim() === '---');
+      if (endIndex === -1) return;
+      const frontmatter = lines.slice(1, endIndex + 1).join('\n');
+      const parsed = yaml.load(frontmatter) as Record<string, unknown>;
+      if (!parsed || typeof parsed !== 'object') return;
+      if (parsed.name !== undefined) setName(parsed.name as string);
+      if (parsed.description !== undefined) setDescription(parsed.description as string);
+      if (parsed.content_path !== undefined) setContentPath(parsed.content_path as string);
+      if (parsed.content !== undefined) setFileContent(parsed.content as string);
+      if (parsed.format !== undefined) setFormat(parsed.format as TemplateFormat);
+      if (parsed.target_kind !== undefined) setTargetKind(parsed.target_kind as TargetKind);
+    } catch {
+      // Ignore parse errors
+    }
+  }, [activeTab, markdownContent]);
 
   // Detect variables from content
   const detectedVariables = useMemo(() => {
@@ -461,43 +486,7 @@ export function TemplateEditorPage() {
             initialValue={markdownContent}
             onChange={(value) => setMarkdownContent(value)}
             onSave={async (value) => {
-              const lines = value.split('\n');
-              const frontmatterLines: string[] = [];
-              let bodyLines: string[] = [];
-              let inFrontmatter = false;
-
-              for (const line of lines) {
-                if (line.trim() === '---') {
-                  if (!inFrontmatter) {
-                    inFrontmatter = true;
-                    continue;
-                  } else {
-                    break;
-                  }
-                }
-                if (inFrontmatter) {
-                  frontmatterLines.push(line);
-                } else {
-                  bodyLines.push(line);
-                }
-              }
-
-              const frontmatter: Record<string, unknown> = {};
-              for (const fl of frontmatterLines) {
-                const match = fl.match(/^(\w+):\s*(.*)$/);
-                if (match) {
-                  const [, key, val] = match;
-                  frontmatter[key] = val;
-                }
-              }
-
-              if (frontmatter.name !== undefined) setName(frontmatter.name as string);
-              if (frontmatter.description !== undefined) setDescription(frontmatter.description as string);
-              if (frontmatter.format !== undefined) setFormat(frontmatter.format as TemplateFormat);
-              if (frontmatter.target_kind !== undefined) setTargetKind(frontmatter.target_kind as TargetKind);
-
-              setFileContent(bodyLines.join('\n').trim());
-              setActiveTab('config');
+              await updateContent(arn, value);
             }}
           />
         </div>

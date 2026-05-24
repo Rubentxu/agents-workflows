@@ -12,17 +12,13 @@ use axum::{
 use http::Method;
 use tower::ServiceExt;
 use std::time::{Duration, Instant};
+use std::sync::Arc;
 use tempfile::TempDir;
 
-use mcp_server::execution_store::ExecutionStore;
-use mcp_server::rest::{create_rest_router, RestState};
+use mcp_server::rest::create_rest_router;
 use mcp_server::state::AppState;
-use registry::application::node_service::NodeService;
-use registry::infrastructure::db::Database;
-use registry::infrastructure::node_repository::SqliteNodeRepository;
-use insights::AnalyticsService;
-use metrics::application::{SseEmitter, MetricsAggregator};
 use mcp_server::bootstrap::BootstrapService;
+use registry::infrastructure::db::Database;
 
 fn create_test_router() -> (Router, TempDir) {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
@@ -30,20 +26,11 @@ fn create_test_router() -> (Router, TempDir) {
     let bootstrap = BootstrapService::new(workspace.clone());
     bootstrap.init().expect("Failed to bootstrap test workspace");
 
-    let db_path = workspace.join("global/registry.db");
-    let db = std::sync::Arc::new(Database::open(db_path.to_str().unwrap()).expect("Failed to open test DB"));
-    let repository = std::sync::Arc::new(SqliteNodeRepository::new(db.clone()));
-    let node_service = std::sync::Arc::new(NodeService::new(repository));
-    let execution_store = std::sync::Arc::new(ExecutionStore::new(db.clone()));
-    let artifact_store = std::sync::Arc::new(mcp_server::artifact_store::ArtifactStore::new(db.clone()));
-    let artifact_service = std::sync::Arc::new(artifact::application::artifact_service::ArtifactService::new(
-        workspace.join("global/artifacts")
-    ));
-    let analytics_service = std::sync::Arc::new(AnalyticsService::new());
-    let sse_emitter = std::sync::Arc::new(SseEmitter::new());
-    let metrics_aggregator = std::sync::Arc::new(MetricsAggregator::new());
-    let app_state = std::sync::Arc::new(AppState { node_service, db, execution_store, artifact_store, artifact_service, analytics_service, sse_emitter, metrics_aggregator, workspace_root: workspace.clone() });
-    let state = RestState::new(app_state);
+    let state = AppState::test_with_workspace(&workspace).expect("test state");
+    let state = Arc::new(state);
+    bootstrap.register_resources_to_db(
+        state.node_service.clone()
+    ).expect("Failed to register resources");
     (create_rest_router(state), temp_dir)
 }
 

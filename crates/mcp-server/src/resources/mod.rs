@@ -16,7 +16,7 @@
 //!
 //! // Use in a handler
 //! pub async fn get_my_resource(
-//!     State(state): State<RestState>,
+//!     State(state): State<Arc<AppState>>,
 //!     Path(arn): Path<String>,
 //! ) -> Result<Json<MyResponse>, (StatusCode, Json<ErrorResponse>)> {
 //!     let handler = CrudHandler::new(MyCallbacks);

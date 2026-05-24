@@ -17,7 +17,7 @@ impl MetricsMcpHandler {
     }
 
     pub async fn metrics_query(&self, params: MetricsQueryParams) -> Result<MetricsResponse, String> {
-        let execution = match self.state.execution_store.get(&params.execution_arn) {
+        let execution = match self.state.execution_store().get(&params.execution_arn) {
             Ok(e) => e,
             Err(_) => {
                 // Return empty metrics for non-existent executions
@@ -104,69 +104,24 @@ impl MetricsMcpHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execution_store::ExecutionStore;
     use registry::infrastructure::db::Database;
-    use registry::infrastructure::node_repository::NodeRepository;
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    fn create_test_db() -> Arc<Database> {
-        Arc::new(Database::open_in_memory().expect("in-memory db"))
-    }
-
-    fn create_test_state(db: Arc<Database>) -> Arc<AppState> {
-        Arc::new(AppState {
-            node_service: Arc::new(registry::application::node_service::NodeService::new(
-                Arc::new(registry::infrastructure::node_repository::SqliteNodeRepository::new(db.clone()))
-            )),
-            db: db.clone(),
-            execution_store: Arc::new(ExecutionStore::new(db.clone())),
-            artifact_store: Arc::new(crate::artifact_store::ArtifactStore::new(db.clone())),
-            artifact_service: Arc::new(artifact::application::artifact_service::ArtifactService::new(
-                std::path::PathBuf::from("/tmp/test-artifacts")
-            )),
-            analytics_service: Arc::new(insights::AnalyticsService::new()),
-            sse_emitter: Arc::new(metrics::application::SseEmitter::new()),
-            metrics_aggregator: Arc::new(metrics::application::MetricsAggregator::new()),
-            workspace_root: std::path::PathBuf::from("/tmp/test-workspace"),
-        })
+    fn create_test_state() -> (Arc<AppState>, Arc<Database>) {
+        let (state, _temp) = AppState::test().expect("test state");
+        let state = Arc::new(state);
+        let db = state.db().clone();
+        (state, db)
     }
 
     #[tokio::test]
     async fn test_metrics_query_returns_execution_state() {
-        let db = create_test_db();
+        let (state, db) = create_test_state();
 
         let execution_arn = "arn:local:workspace/test:execution/1";
         let workflow_arn = "arn:local:global:workflow/test";
         let now = chrono::Utc::now().to_rfc3339();
-
-        {
-            let conn = db.connection().expect("db connection");
-            conn.execute(
-                "INSERT INTO nodes (id, type, name, scope, registry, namespace) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![workflow_arn, "workflow", "test", "global", "local", "global"],
-            ).expect("insert workflow");
-        }
-
-        let execution = crate::execution_store::PersistedExecution {
-            arn: execution_arn.to_string(),
-            workflow_arn: workflow_arn.to_string(),
-            workspace_id: "test".to_string(),
-            status: "running".to_string(),
-            current_stage: Some("stage-2".to_string()),
-            completed_stages: vec!["stage-1".to_string()],
-            stage_outputs: HashMap::new(),
-            execution_context: serde_json::json!({}),
-            triggered_by: crate::types::TriggerInfo {
-                trigger_type: "manual".to_string(),
-                input: serde_json::json!({}),
-            },
-            started_at: Some(now.clone()),
-            completed_at: None,
-        };
-
-        let execution_store = Arc::new(ExecutionStore::new(db.clone()));
-        execution_store.create(&execution).expect("create execution");
 
         let node = registry::domain::Node {
             id: workflow_arn.to_string(),
@@ -195,10 +150,28 @@ spec:
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
-        let repo = Arc::new(registry::infrastructure::node_repository::SqliteNodeRepository::new(db.clone()));
-        repo.save(node).expect("save workflow node");
+        state.node_service().create(node).expect("save workflow node");
 
-        let state = create_test_state(db);
+        let execution = crate::execution_store::PersistedExecution {
+            arn: execution_arn.to_string(),
+            workflow_arn: workflow_arn.to_string(),
+            workspace_id: "test".to_string(),
+            status: "running".to_string(),
+            current_stage: Some("stage-2".to_string()),
+            completed_stages: vec!["stage-1".to_string()],
+            stage_outputs: HashMap::new(),
+            execution_context: serde_json::json!({}),
+            triggered_by: crate::types::TriggerInfoDto {
+                trigger_type: "manual".to_string(),
+                source: None,
+                input: serde_json::json!({}),
+            },
+            started_at: Some(now.clone()),
+            completed_at: None,
+        };
+
+        state.execution_store().create(&execution).expect("create execution");
+
         let handler = MetricsMcpHandler::new(state, Arc::new(crate::metrics_sse::MetricsBroadcaster::new()));
 
         let result = handler.metrics_query(MetricsQueryParams {

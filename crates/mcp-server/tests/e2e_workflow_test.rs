@@ -19,46 +19,18 @@ use axum::body::to_bytes;
 use std::sync::Arc;
 use tempfile::TempDir;
 
-use mcp_server::execution_store::ExecutionStore;
-use mcp_server::rest::{create_rest_router, RestState};
+use mcp_server::rest::create_rest_router;
 use mcp_server::state::AppState;
-use registry::application::node_service::NodeService;
-use registry::infrastructure::db::Database;
-use registry::infrastructure::node_repository::SqliteNodeRepository;
-use insights::AnalyticsService;
-use metrics::application::{SseEmitter, MetricsAggregator};
 use mcp_server::bootstrap::BootstrapService;
-
-fn create_test_rest_state_with_bootstrap(temp_dir: &TempDir) -> (RestState, TempDir) {
-    let workspace = temp_dir.path().to_path_buf();
-    let bootstrap = BootstrapService::new(workspace.clone());
-
-    bootstrap.init().expect("Failed to bootstrap test workspace");
-
-    let db_path = workspace.join("global/registry.db");
-    let db = Arc::new(Database::open(db_path.to_str().unwrap()).expect("Failed to open test DB"));
-    let repository = Arc::new(SqliteNodeRepository::new(db.clone()));
-    let node_service = Arc::new(NodeService::new(repository));
-
-    // Register workflows to DB (only workflows are auto-registered)
-    bootstrap.register_resources_to_db(node_service.clone()).expect("Failed to register workflows");
-
-    let execution_store = Arc::new(ExecutionStore::new(db.clone()));
-    let artifact_store = Arc::new(mcp_server::artifact_store::ArtifactStore::new(db.clone()));
-    let artifact_service = Arc::new(artifact::application::artifact_service::ArtifactService::new(
-        workspace.join("global/artifacts")
-    ));
-    let analytics_service = Arc::new(AnalyticsService::new());
-    let sse_emitter = Arc::new(SseEmitter::new());
-    let metrics_aggregator = Arc::new(MetricsAggregator::new());
-    let app_state = Arc::new(AppState { node_service, db, execution_store, artifact_store, artifact_service, analytics_service, sse_emitter, metrics_aggregator, workspace_root: workspace.clone() });
-    let state = RestState::new(app_state);
-    (state, TempDir::new().expect("Failed to create temp dir for artifacts"))
-}
 
 fn create_test_router_with_bootstrap() -> (Router, TempDir) {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let (state, _artifacts_temp) = create_test_rest_state_with_bootstrap(&temp_dir);
+    let workspace = temp_dir.path().to_path_buf();
+    let bootstrap = BootstrapService::new(workspace.clone());
+    bootstrap.init().expect("Failed to bootstrap test workspace");
+    let state = AppState::test_with_workspace(&workspace).expect("test state");
+    let state = Arc::new(state);
+    bootstrap.register_resources_to_db(state.node_service.clone()).expect("Failed to register resources");
     (create_rest_router(state), temp_dir)
 }
 

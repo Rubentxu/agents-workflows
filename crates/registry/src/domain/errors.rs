@@ -31,6 +31,12 @@ pub enum RegistryError {
 
     #[error("Database error: {0}")]
     DatabaseError(#[from] rusqlite::Error),
+
+    #[error("Workspace not found: {0}")]
+    WorkspaceNotFound(String),
+
+    #[error("Workspace error: {0}")]
+    WorkspaceError(String),
 }
 
 pub type RegistryResult<T> = Result<T, RegistryError>;

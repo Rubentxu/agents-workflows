@@ -8,9 +8,22 @@ authors.workspace = true
 name = "workflow-mcp"
 path = "src/main.rs"
 
+[[test]]
+name = "rest_api"
+required-features = ["test-factory"]
+
+[[test]]
+name = "performance"
+required-features = ["test-factory"]
+
+[[test]]
+name = "e2e_workflow_test"
+required-features = ["test-factory"]
+
 [features]
 default = []
 embedded-studio = ["include_dir", "include_dir_macros"]
+test-factory = ["tempfile"]
 
 [dependencies]
 registry = { path = "../registry" }
@@ -48,11 +61,12 @@ clap = { version = "4", features = ["derive"] }
 shellexpand = "3"
 serde_yaml = "0.9"
 schemars.workspace = true
+tempfile = { version = "3", optional = true }
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }
 tokio-test = "0.4"
-tower = "0.5"
+tower = { workspace = true, features = ["util"] }
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
 http = "1"

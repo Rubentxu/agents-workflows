@@ -19,6 +19,7 @@ impl ArtifactMcpHandler {
         Self { state }
     }
 
+    #[allow(deprecated)]
     pub async fn artifact_create(&self, params: ArtifactCreateParams) -> Result<Artifact, String> {
         let timestamp = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
         let workspace_id = Arn::parse(&params.execution_arn)
@@ -46,11 +47,11 @@ impl ArtifactMcpHandler {
             created_at: chrono::Utc::now(),
         };
 
-        let stored_artifact = self.state.artifact_service
+        let stored_artifact = self.state.artifact_service()
             .store(domain_artifact, content_bytes)
             .map_err(|e| format!("Failed to store artifact: {}", e))?;
 
-        let conn = self.state.db.connection()
+        let conn = self.state.db().connection()
             .map_err(|e| format!("DB error: {}", e))?;
         // Disable FK checks for this insert — execution may not exist yet
         conn.execute_batch("PRAGMA foreign_keys = OFF").ok();
@@ -87,9 +88,10 @@ impl ArtifactMcpHandler {
         })
     }
 
+    #[allow(deprecated)]
     pub async fn artifact_get(&self, params: GetByArnParams) -> Result<Artifact, String> {
         let (execution_id, stage_id, name, storage_type, location, content_type, size) = {
-            let conn = self.state.db.connection()
+            let conn = self.state.db().connection()
                 .map_err(|e| format!("DB error: {}", e))?;
             conn.query_row(
                 "SELECT execution_id, stage_id, name, storage_type, location, content_type, size FROM artifacts WHERE id = ?1",
@@ -125,7 +127,7 @@ impl ArtifactMcpHandler {
             created_at: chrono::Utc::now(),
         };
 
-        let content_bytes = self.state.artifact_service
+        let content_bytes = self.state.artifact_service()
             .retrieve(&domain_artifact)
             .map_err(|e| format!("Failed to retrieve artifact: {}", e))?;
         let content = String::from_utf8_lossy(&content_bytes).to_string();
@@ -142,7 +144,7 @@ impl ArtifactMcpHandler {
     }
 
     pub async fn artifact_list(&self, params: ArtifactListParams) -> Result<Vec<ArtifactSummary>, String> {
-        let conn = self.state.db.connection()
+        let conn = self.state.db().connection()
             .map_err(|e| format!("DB error: {}", e))?;
 
         let mut sql = String::from("SELECT id, execution_id, stage_id, name, size FROM artifacts WHERE 1=1");

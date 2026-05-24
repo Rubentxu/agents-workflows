@@ -1,31 +1,50 @@
 //! Application state holding references to all services
+//!
+//! AppState is decomposed into focused contexts following DDD:
+//! - registry: NodeService, Database, WorkspaceRepository
+//! - execution: ExecutionStore, ArtifactService, ArtifactRepository
+//! - insights: InsightsRepository, AnalyticsService
+//! - metrics: AlertRepository
 
 use std::sync::Arc;
 use std::path::PathBuf;
 use anyhow::Result;
-use crate::execution_store::ExecutionStore;
-use crate::artifact_store::ArtifactStore;
 use registry::domain::{Node, NodeType};
-use registry::application::node_service::NodeService;
 use registry::infrastructure::db::Database;
-use registry::infrastructure::node_repository::SqliteNodeRepository;
-use workflow::application::WorkflowPlanner;
+use registry::domain::WorkspaceRepository;
 use workflow::PlanningResult;
+use workflow::parse_registry_workflow_yaml;
+use workflow::application::WorkflowPlanner;
 use artifact::application::artifact_service::ArtifactService;
-use insights::analytics::AnalyticsService;
-use metrics::application::{SseEmitter, MetricsAggregator};
+use artifact::domain::ArtifactRepository;
+use insights::domain::InsightsRepository;
+use metrics::domain::AlertRepository;
 
-/// Application state - holds all services
+pub use crate::context::{
+    RegistryContext,
+    ExecutionContext,
+    InsightsContext,
+    MetricsContext,
+};
+
+use crate::artifact_store::ArtifactStore;
+use crate::execution_store::ExecutionStore;
+
+/// Application state - holds all services in focused contexts
+#[derive(Clone)]
 pub struct AppState {
-    pub node_service: Arc<NodeService>,
-    pub db: Arc<Database>,
-    pub execution_store: Arc<ExecutionStore>,
-    pub artifact_store: Arc<ArtifactStore>,
-    pub artifact_service: Arc<ArtifactService>,
-    pub analytics_service: Arc<AnalyticsService>,
-    pub sse_emitter: Arc<SseEmitter>,
-    pub metrics_aggregator: Arc<MetricsAggregator>,
+    /// Registry context - node service, database, workspace repository
+    pub registry: Arc<RegistryContext>,
+    /// Execution context - execution store, artifact service
+    pub execution: Arc<ExecutionContext>,
+    /// Insights context - insights repository, analytics service
+    pub insights: Arc<InsightsContext>,
+    /// Metrics context - alert repository
+    pub metrics: Arc<MetricsContext>,
+    /// Root path for workspace files
     pub workspace_root: PathBuf,
+    /// When the server started
+    pub started_at: std::time::Instant,
 }
 
 impl AppState {
@@ -43,26 +62,22 @@ impl AppState {
 
         // Open database in workspace global directory
         let db_path = global_dir.join("registry.db");
-
         let db = Arc::new(Database::open(db_path.to_str().unwrap_or_default())?);
 
-        // Create repository and service
-        let repository = Arc::new(SqliteNodeRepository::new(db.clone()));
-        let node_service = Arc::new(NodeService::new(repository));
-        let execution_store = Arc::new(ExecutionStore::new(db.clone()));
-        let artifact_store = Arc::new(ArtifactStore::new(db.clone()));
+        // Create context structs
+        let registry = Arc::new(RegistryContext::new(db.clone()));
+        let execution = Arc::new(ExecutionContext::new(db.clone(), artifacts_dir));
+        let insights = Arc::new(InsightsContext::new(db.clone()));
+        let metrics = Arc::new(MetricsContext::new(db.clone()));
 
-        // Create artifact service with workspace artifacts directory
-        let artifact_service = Arc::new(ArtifactService::new(artifacts_dir));
-
-        // Create insights analytics service
-        let analytics_service = Arc::new(AnalyticsService::new());
-
-        // Create metrics services
-        let sse_emitter = Arc::new(SseEmitter::new());
-        let metrics_aggregator = Arc::new(MetricsAggregator::new());
-
-        Ok(Self { node_service, db, execution_store, artifact_store, artifact_service, analytics_service, sse_emitter, metrics_aggregator, workspace_root })
+        Ok(Self {
+            registry,
+            execution,
+            insights,
+            metrics,
+            workspace_root,
+            started_at: std::time::Instant::now(),
+        })
     }
 
     /// Get the file path for a resource ARN (ADR-0016)
@@ -113,20 +128,20 @@ impl AppState {
 
     /// List all workflows from registry
     pub async fn list_workflows(&self) -> Vec<Node> {
-        self.node_service
+        self.registry.node_service
             .list_by_type(NodeType::Workflow)
             .unwrap_or_default()
     }
 
     /// Get workflow by ARN
     pub async fn get_workflow(&self, arn: &str) -> Result<Option<Node>> {
-        Ok(self.node_service.get(arn).ok().flatten())
+        Ok(self.registry.node_service.get(arn).ok().flatten())
     }
 
     /// Get all stage IDs for a workflow, preserving declared order where possible.
     pub async fn get_workflow_stage_ids(&self, arn: &str) -> Result<Vec<String>> {
         let node = self
-            .node_service
+            .registry.node_service
             .get(arn)
             .ok()
             .flatten()
@@ -136,10 +151,9 @@ impl AppState {
             .config_json
             .ok_or_else(|| anyhow::anyhow!("Workflow node has no config: {}", arn))?;
 
-        let yaml_val: serde_yaml::Value = serde_yaml::from_str(&config)
-            .map_err(|e| anyhow::anyhow!("Failed to parse workflow YAML: {}", e))?;
-
-        Ok(extract_stage_ids(&yaml_val))
+        let workflow = parse_registry_workflow_yaml(&node.id, &node.name, &config)
+            .map_err(|e| anyhow::anyhow!("Failed to parse workflow: {}", e))?;
+        Ok(workflow.stages.iter().map(|s| s.id.clone()).collect())
     }
 
     /// List nodes, optionally filtered by type
@@ -153,38 +167,91 @@ impl AppState {
                     "tool" => NodeType::Tool,
                     _ => return vec![],
                 };
-                self.node_service.list_by_type(nt).unwrap_or_default()
+                self.registry.node_service.list_by_type(nt).unwrap_or_default()
             }
             None => {
                 // List all nodes regardless of type
-                self.node_service.list_all().unwrap_or_default()
+                self.registry.node_service.list_all().unwrap_or_default()
             }
         }
     }
 
     /// Get node by ARN
     pub async fn get_node(&self, arn: &str) -> Result<Option<Node>> {
-        Ok(self.node_service.get(arn).ok().flatten())
+        Ok(self.registry.node_service.get(arn).ok().flatten())
     }
 
     /// List recent artifacts
     pub async fn list_artifacts(&self, limit: usize) -> Vec<serde_json::Value> {
-        self.artifact_store.list(limit).unwrap_or_default()
+        self.artifact_repository()
+            .list(limit)
+            .map(|artifacts| {
+                artifacts
+                    .into_iter()
+                    .map(|a| {
+                        serde_json::json!({
+                            "id": a.id,
+                            "execution_id": a.execution_id,
+                            "stage_id": a.stage_id,
+                            "name": a.name,
+                            "size": a.size,
+                            "storage_type": match a.storage_type {
+                                artifact::domain::StorageType::Sqlite => "sqlite",
+                                artifact::domain::StorageType::Filesystem => "filesystem",
+                            },
+                            "content_type": match a.content_type {
+                                artifact::domain::ContentType::Markdown => "markdown",
+                                artifact::domain::ContentType::Text => "text",
+                                artifact::domain::ContentType::Json => "json",
+                                artifact::domain::ContentType::Code => "code",
+                                artifact::domain::ContentType::Binary => "binary",
+                            },
+                            "created_at": a.created_at.to_rfc3339(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Get artifact by ID
     pub async fn get_artifact(&self, id: &str) -> Result<Option<serde_json::Value>> {
-        self.artifact_store
+        self.artifact_repository()
             .get(id)
+            .map(|opt| {
+                opt.map(|a| {
+                    serde_json::json!({
+                        "id": a.id,
+                        "execution_id": a.execution_id,
+                        "stage_id": a.stage_id,
+                        "name": a.name,
+                        "size": a.size,
+                        "storage_type": match a.storage_type {
+                            artifact::domain::StorageType::Sqlite => "sqlite",
+                            artifact::domain::StorageType::Filesystem => "filesystem",
+                        },
+                        "location": a.location,
+                        "content_type": match a.content_type {
+                            artifact::domain::ContentType::Markdown => "markdown",
+                            artifact::domain::ContentType::Text => "text",
+                            artifact::domain::ContentType::Json => "json",
+                            artifact::domain::ContentType::Code => "code",
+                            artifact::domain::ContentType::Binary => "binary",
+                        },
+                        "checksum": a.checksum,
+                        "created_at": a.created_at.to_rfc3339(),
+                    })
+                })
+            })
             .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
     /// Generate an execution plan for a workflow
     pub async fn generate_execution_plan(&self, arn: &str) -> Result<Option<PlanningResult>> {
-        use workflow::{Workflow, parse_registry_workflow_yaml};
+        use workflow::Workflow;
 
         // Get the workflow node from registry
-        let node = match self.node_service.get(arn).ok().flatten() {
+        let node = match self.registry.node_service.get(arn).ok().flatten() {
             Some(n) => n,
             None => return Ok(None),
         };
@@ -202,92 +269,125 @@ impl AppState {
 
         Ok(Some(result))
     }
-}
 
-fn extract_stage_ids(yaml_val: &serde_yaml::Value) -> Vec<String> {
-    let spec = yaml_val
-        .get("spec")
-        .and_then(|v| v.as_mapping())
-        .cloned();
+    pub fn save_node(&self, node: Node) -> Result<Node, String> {
+        match self.registry.node_service.create(node.clone()) {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                if matches!(e, registry::domain::RegistryError::DuplicateNode(_)) {
+                    return Err(e.to_string());
+                }
+                self.registry.node_service.update(node).map_err(|e| e.to_string())
+            }
+        }
+    }
 
-    let stages_val = spec
-        .as_ref()
-        .and_then(|m| m.get(serde_yaml::Value::from("stages")))
-        .or_else(|| yaml_val.get("stages"));
+    pub fn delete_node_by_arn(&self, arn: &str) -> Result<bool, String> {
+        let node = self.registry.node_service.get(arn).map_err(|e| e.to_string())?;
+        if node.is_none() {
+            return Ok(false);
+        }
+        self.registry.node_service.delete(arn).map_err(|e| e.to_string())?;
+        Ok(true)
+    }
 
-    match stages_val {
-        Some(serde_yaml::Value::Mapping(map)) => map
-            .iter()
-            .filter_map(|(stage_name, stage_val)| {
-                let key_name = stage_name.as_str().map(String::from);
-                let explicit_id = stage_val
-                    .as_mapping()
-                    .and_then(|m| m.get(serde_yaml::Value::from("id")))
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                explicit_id.or(key_name)
-            })
-            .collect(),
-        Some(serde_yaml::Value::Sequence(seq)) => seq
-            .iter()
-            .enumerate()
-            .map(|(idx, stage_val)| {
-                stage_val
-                    .as_mapping()
-                    .and_then(|m| m.get(serde_yaml::Value::from("id")))
-                    .and_then(|v| v.as_str())
-                    .map(String::from)
-                    .unwrap_or_else(|| format!("stage-{}", idx))
-            })
-            .collect(),
-        _ => vec![],
+    pub fn list_by_type_str(&self, node_type: &str) -> Result<Vec<Node>, String> {
+        let nt = match node_type.to_lowercase().as_str() {
+            "workflow" => NodeType::Workflow,
+            "agent" => NodeType::Agent,
+            "skill" => NodeType::Skill,
+            "tool" => NodeType::Tool,
+            "prompt" => NodeType::Prompt,
+            "template" => NodeType::Template,
+            _ => return Ok(vec![]),
+        };
+        self.registry.node_service.list_by_type(nt).map_err(|e| e.to_string())
+    }
+
+    pub fn get_node_by_arn(&self, arn: &str) -> Result<Option<Node>, String> {
+        self.registry.node_service.get(arn).map_err(|e| e.to_string())
+    }
+
+    // =========================================================================
+    // Backward-compatible accessors for legacy code paths
+    // These delegate to the new context structure
+    // =========================================================================
+
+    /// Get database connection (for raw SQL handlers)
+    pub fn db(&self) -> &Arc<Database> {
+        &self.registry.db
+    }
+
+    /// Get workspace store (for backward compatibility)
+    pub fn workspace_store(&self) -> &Arc<dyn WorkspaceRepository> {
+        &self.registry.workspace_repository
+    }
+
+    /// Get execution store
+    pub fn execution_store(&self) -> &Arc<ExecutionStore> {
+        &self.execution.execution_store
+    }
+
+    /// Get artifact repository (metadata persistence via trait)
+    pub fn artifact_repository(&self) -> &Arc<dyn ArtifactRepository> {
+        &self.execution.artifact_repository
+    }
+
+    /// Get artifact store (metadata persistence) — concrete type for backward compatibility
+    pub fn artifact_store(&self) -> &Arc<ArtifactStore> {
+        &self.execution.artifact_store
+    }
+
+    /// Get artifact service (storage operations)
+    pub fn artifact_service(&self) -> &Arc<ArtifactService> {
+        &self.execution.artifact_service
+    }
+
+    /// Get insights store
+    pub fn insights_store(&self) -> &Arc<dyn InsightsRepository> {
+        &self.insights.insights_repository
+    }
+
+    /// Get alert store
+    pub fn alert_store(&self) -> &Arc<dyn AlertRepository> {
+        &self.metrics.alert_repository
+    }
+
+    /// Get node service
+    pub fn node_service(&self) -> &Arc<registry::application::node_service::NodeService> {
+        &self.registry.node_service
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::extract_stage_ids;
-
-    #[test]
-    fn extract_stage_ids_from_top_level_mapping() {
-        let yaml = serde_yaml::from_str::<serde_yaml::Value>(
-            r#"
-stages:
-  explore:
-    id: sdd-explore
-    agent: orchestrator
-  propose:
-    id: sdd-propose
-    agent: orchestrator
-"#,
-        )
-        .expect("yaml");
-
-        assert_eq!(
-            extract_stage_ids(&yaml),
-            vec!["sdd-explore".to_string(), "sdd-propose".to_string()]
-        );
+#[cfg(any(test, feature = "test-factory"))]
+impl AppState {
+    pub fn test() -> anyhow::Result<(Self, tempfile::TempDir)> {
+        let temp_dir = tempfile::TempDir::new()?;
+        let state = Self::test_with_workspace(temp_dir.path())?;
+        Ok((state, temp_dir))
     }
 
-    #[test]
-    fn extract_stage_ids_from_spec_mapping() {
-        let yaml = serde_yaml::from_str::<serde_yaml::Value>(
-            r#"
-spec:
-  stages:
-    build:
-      id: build
-      agent: build-agent
-    test:
-      id: test
-      agent: test-agent
-"#,
-        )
-        .expect("yaml");
+    pub fn test_with_workspace(workspace: &std::path::Path) -> anyhow::Result<Self> {
+        let global_dir = workspace.join("global");
+        std::fs::create_dir_all(&global_dir).ok();
 
-        assert_eq!(
-            extract_stage_ids(&yaml),
-            vec!["build".to_string(), "test".to_string()]
-        );
+        let db = Arc::new(Database::open_in_memory()?);
+
+        // Create context structs
+        let registry = Arc::new(RegistryContext::new(db.clone()));
+        let artifacts_dir = workspace.join("artifacts");
+        std::fs::create_dir_all(&artifacts_dir).ok();
+        let execution = Arc::new(ExecutionContext::new(db.clone(), artifacts_dir));
+        let insights = Arc::new(InsightsContext::new(db.clone()));
+        let metrics = Arc::new(MetricsContext::new(db.clone()));
+
+        Ok(Self {
+            registry,
+            execution,
+            insights,
+            metrics,
+            workspace_root: workspace.to_path_buf(),
+            started_at: std::time::Instant::now(),
+        })
     }
 }

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use axum::{http::StatusCode, Json};
 use registry::domain::Node;
 
-use crate::rest::RestState;
+use crate::state::AppState;
 use crate::rest_types::{CreateAgentRequest, UpdateAgentRequest};
 use crate::types::AgentSummary;
 use crate::resources::{
@@ -128,13 +128,13 @@ pub fn node_to_summary(node: &Node) -> AgentSummary {
     AgentSummary {
         arn: node.id.clone(),
         name: node.name.clone(),
-        description: extract_description(node),
+        description: description_from_config(node),
         scope: node.scope.clone(),
     }
 }
 
 /// Extract description from node's config
-fn extract_description(node: &Node) -> String {
+fn description_from_config(node: &Node) -> String {
     if let Some(config) = &node.config_json {
         if let Ok(yaml) = serde_yaml::from_str::<serde_yaml::Value>(config) {
             if let Some(spec) = yaml.get("spec") {
@@ -152,16 +152,16 @@ fn extract_description(node: &Node) -> String {
 // ============================================================================
 
 /// List all agents
-pub async fn list(state: Arc<RestState>) -> Result<Json<serde_json::Value>, CrudError> {
-    let nodes = state.list_by_type("agent").map_err(internal_error)?;
+pub async fn list(state: Arc<AppState>) -> Result<Json<serde_json::Value>, CrudError> {
+    let nodes = state.list_by_type_str("agent").map_err(internal_error)?;
     let summaries: Vec<_> = nodes.iter().map(node_to_summary).collect();
     Ok(Json(list_response(summaries, "agents")))
 }
 
 /// Get an agent by ARN
-pub async fn get(state: Arc<RestState>, arn: &str) -> Result<Json<serde_json::Value>, CrudError> {
+pub async fn get(state: Arc<AppState>, arn: &str) -> Result<Json<serde_json::Value>, CrudError> {
     let arn = validate_arn(arn)?;
-    match state.get_node(&arn).map_err(internal_error)? {
+    match state.get_node_by_arn(&arn).map_err(internal_error)? {
         Some(node) => Ok(Json(node_to_response(&node))),
         None => Err(not_found("Agent", &arn)),
     }
@@ -169,7 +169,7 @@ pub async fn get(state: Arc<RestState>, arn: &str) -> Result<Json<serde_json::Va
 
 /// Create an agent
 pub async fn create(
-    state: Arc<RestState>,
+    state: Arc<AppState>,
     req: CreateAgentRequest,
 ) -> Result<(StatusCode, Json<serde_json::Value>), CrudError> {
     let arn = build_arn(&req.scope, &req.name);
@@ -199,12 +199,12 @@ pub async fn create(
 
 /// Update an agent
 pub async fn update(
-    state: Arc<RestState>,
+    state: Arc<AppState>,
     arn: &str,
     req: UpdateAgentRequest,
 ) -> Result<Json<serde_json::Value>, CrudError> {
     let arn = validate_arn(arn)?;
-    let existing = state.get_node(&arn).map_err(internal_error)?.ok_or_else(|| not_found("Agent", &arn))?;
+    let existing = state.get_node_by_arn(&arn).map_err(internal_error)?.ok_or_else(|| not_found("Agent", &arn))?;
 
     let mut config: serde_yaml::Value = existing
         .config_json
@@ -233,9 +233,9 @@ pub async fn update(
 }
 
 /// Delete an agent
-pub async fn delete(state: Arc<RestState>, arn: &str) -> Result<StatusCode, CrudError> {
+pub async fn delete(state: Arc<AppState>, arn: &str) -> Result<StatusCode, CrudError> {
     let arn = validate_arn(arn)?;
-    let deleted = state.delete_node(&arn).map_err(internal_error)?;
+    let deleted = state.delete_node_by_arn(&arn).map_err(internal_error)?;
     if deleted {
         Ok(StatusCode::NO_CONTENT)
     } else {

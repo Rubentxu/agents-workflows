@@ -67,7 +67,7 @@ impl McpHandler {
     }
 
     /// Extract description from metadata_json if available
-    pub fn extract_description(node: &Node) -> String {
+    pub fn description_from_metadata(node: &Node) -> String {
         if let Some(metadata) = &node.metadata_json {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(metadata) {
                 if let Some(desc) = json.get("description").and_then(|v| v.as_str()) {
@@ -102,7 +102,7 @@ impl McpHandler {
         let agents: Vec<AgentSummary> = nodes
             .into_iter()
             .map(|node| {
-                let description = Self::extract_description(&node);
+                let description = Self::description_from_metadata(&node);
                 AgentSummary {
                     arn: node.id.clone(),
                     name: node.name,
@@ -115,12 +115,13 @@ impl McpHandler {
     }
 
     /// Get an agent by ARN
+    #[allow(deprecated)]
     pub async fn agent_get(&self, params: GetByArnParams) -> Result<Agent, String> {
         let node = self.state.get_node(&params.arn).await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Agent not found: {}", params.arn))?;
 
-        let description = Self::extract_description(&node);
+        let description = Self::description_from_metadata(&node);
         let agent: Agent = match &node.config_json {
             Some(config) => serde_json::from_str(config)
                 .map_err(|e| format!("Failed to parse agent: {}", e))?,
@@ -147,10 +148,10 @@ impl McpHandler {
             .into_iter()
             .filter(|node| {
                 node.name.to_lowercase().contains(&query_lower) ||
-                Self::extract_description(&node).to_lowercase().contains(&query_lower)
+                Self::description_from_metadata(&node).to_lowercase().contains(&query_lower)
             })
             .map(|node| {
-                let description = Self::extract_description(&node);
+                let description = Self::description_from_metadata(&node);
                 AgentSummary {
                     arn: node.id.clone(),
                     name: node.name,
@@ -172,7 +173,7 @@ impl McpHandler {
         let skills: Vec<SkillSummary> = nodes
             .into_iter()
             .map(|node| {
-                let description = Self::extract_description(&node);
+                let description = Self::description_from_metadata(&node);
                 SkillSummary {
                     arn: node.id.clone(),
                     name: node.name,
@@ -185,12 +186,13 @@ impl McpHandler {
     }
 
     /// Get a skill by ARN
+    #[allow(deprecated)]
     pub async fn skill_get(&self, params: GetByArnParams) -> Result<Skill, String> {
         let node = self.state.get_node(&params.arn).await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Skill not found: {}", params.arn))?;
 
-        let description = Self::extract_description(&node);
+        let description = Self::description_from_metadata(&node);
         let skill: Skill = match &node.config_json {
             Some(config) => serde_json::from_str(config)
                 .map_err(|e| format!("Failed to parse skill: {}", e))?,
@@ -216,10 +218,10 @@ impl McpHandler {
             .into_iter()
             .filter(|node| {
                 node.name.to_lowercase().contains(&query_lower) ||
-                Self::extract_description(&node).to_lowercase().contains(&query_lower)
+                Self::description_from_metadata(&node).to_lowercase().contains(&query_lower)
             })
             .map(|node| {
-                let description = Self::extract_description(&node);
+                let description = Self::description_from_metadata(&node);
                 SkillSummary {
                     arn: node.id.clone(),
                     name: node.name,
@@ -241,7 +243,7 @@ impl McpHandler {
         let prompts: Vec<PromptSummary> = nodes
             .into_iter()
             .map(|node| {
-                let description = Self::extract_description(&node);
+                let description = Self::description_from_metadata(&node);
                 PromptSummary {
                     arn: node.id.clone(),
                     name: node.name,
@@ -254,12 +256,13 @@ impl McpHandler {
     }
 
     /// Get a prompt by ARN
+    #[allow(deprecated)]
     pub async fn prompt_get(&self, params: GetByArnParams) -> Result<Prompt, String> {
         let node = self.state.get_node(&params.arn).await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Prompt not found: {}", params.arn))?;
 
-        let description = Self::extract_description(&node);
+        let description = Self::description_from_metadata(&node);
         let prompt: Prompt = match &node.config_json {
             Some(config) => serde_json::from_str(config)
                 .map_err(|e| format!("Failed to parse prompt: {}", e))?,
@@ -286,7 +289,7 @@ impl McpHandler {
         let kind = &params.kind;
 
         // 1. Verify the target node exists
-        let node = self.state.node_service.get(arn)
+        let node = self.state.node_service().get(arn)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Resource not found: {}", arn))?;
 
@@ -294,7 +297,7 @@ impl McpHandler {
         let is_global = node.scope == "global";
 
         // 2. Query dependent resources (incoming edges — nodes that depend on this one)
-        let conn = self.state.db.connection()
+        let conn = self.state.db().connection()
             .map_err(|e| e.to_string())?;
         let mut stmt = conn.prepare(
             "SELECT from_id, relationship_type FROM edges WHERE to_id = ?1"
@@ -309,7 +312,7 @@ impl McpHandler {
         let mut affected_workspaces_set = std::collections::HashSet::new();
         for (from_id, _rel_type) in edge_rows {
             // Look up the dependent node to get its name and kind
-            if let Some(dep_node) = self.state.node_service.get(&from_id).ok().flatten() {
+            if let Some(dep_node) = self.state.node_service().get(&from_id).ok().flatten() {
                 let dep_kind = dep_node.node_type.as_str().to_string();
                 dependents.push(ImpactItem {
                     id: from_id.clone(),

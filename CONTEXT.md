@@ -91,6 +91,14 @@ A structured log event capturing inputs, outputs, and metadata for each stage of
 │  │  └── /metrics/sse → SSE (real-time metrics)                    │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 │                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │  AppState (Context Decomposition)                               │ │
+│  │  ├── RegistryContext → node_service, db, workspace_repository   │ │
+│  │  ├── ExecutionContext → execution_store, artifact_service        │ │
+│  │  ├── InsightsContext → insights_repository, analytics_service  │ │
+│  │  └── MetricsContext → alert_repository                         │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                                                                      │
 │  ~/.workflows/                                                       │
 │  ├── global/                    # Shared across all workspaces       │
 │  │   ├── registry.db            # SQLite CACHE (files = truth)      │
@@ -118,20 +126,25 @@ A structured log event capturing inputs, outputs, and metadata for each stage of
 
 1. **Registry** — Graph of nodes (workflows, agents, skills, prompts, tools) and edges
 2. **Workflow** — Workflow definitions (spec), stages, execution state (status), navigation
-3. **Artifact** — Hybrid storage (SQLite <1MB, filesystem ≥1MB)
-4. **Metrics** — SSE streaming for execution monitoring
-5. **Insights** — Structured logging for workflow behavior analysis
+3. **Artifact** — Hybrid storage (SQLite <1MB, filesystem ≥1MB); defines `ArtifactRepository` trait for artifact metadata persistence
+4. **Metrics** — SSE streaming for execution monitoring; defines `AlertRepository` trait for system monitoring notifications (alerts). Alerts are placed in this bounded context because they are monitoring/observability notifications, not core domain entities. The `AlertRepository` trait lives in `crates/metrics/src/domain/` with its implementation (`AlertStore`) in `crates/mcp-server/`.
+5. **Insights** — Structured logging for workflow behavior analysis; defines `InsightsRepository` trait
 
 ## Key Paths
 
 | Path | Description |
 |------|-------------|
 | `crates/registry/` | Registry bounded context |
+| `crates/registry/src/domain/workspace_repository.rs` | `WorkspaceRepository` trait |
 | `crates/workflow/` | Workflow BC: definitions, execution state, navigation |
 | `crates/artifact/` | Artifact bounded context |
+| `crates/artifact/src/domain/artifact_repository.rs` | `ArtifactRepository` trait |
 | `crates/metrics/` | Metrics bounded context |
+| `crates/metrics/src/domain/alert_repository.rs` | `AlertRepository` trait |
 | `crates/insights/` | Insights bounded context |
+| `crates/insights/src/domain/insights_repository.rs` | `InsightsRepository` trait |
 | `crates/mcp-server/` | MCP protocol handler, REST API, adapters |
+| `crates/mcp-server/src/types/` | MCP DTO types (`workflow_dto.rs`, `execution.rs`, `agent.rs`, `skill.rs`, `prompt.rs`, `artifact.rs`, `insight.rs`, `metrics.rs`, `impact.rs`) |
 | `studio/` | React web application (embedded in binary) |
 | `docs/` | Architecture Decision Records and specifications |
 
@@ -165,7 +178,20 @@ The execution layer follows a **spec-vs-status** pattern (analogous to Kubernete
 | `crates/mcp-server/src/workflow_handler.rs` | MCP handler (uses app service + domain parser) |
 | `crates/mcp-server/src/rest_handlers.rs` | REST API handlers (1173 lines, 8 raw SQL remaining) |
 | `crates/mcp-server/src/studio.rs` | Embedded Studio serving (`include_dir!` feature) + filesystem fallback |
-| `crates/mcp-server/src/state.rs` | AppState adapter container (raw-SQL-free) |
+| `crates/mcp-server/src/state.rs` | AppState with context decomposition (`RegistryContext`, `ExecutionContext`, `InsightsContext`, `MetricsContext`) — raw-SQL-free |
+
+### AppState Context Decomposition
+
+```rust
+pub struct AppState {
+    pub registry: Arc<RegistryContext>,    // node_service, db, workspace_repository
+    pub execution: Arc<ExecutionContext>, // execution_store, artifact_service, artifact_repository
+    pub insights: Arc<InsightsContext>,   // insights_repository, analytics_service
+    pub metrics: Arc<MetricsContext>,     // alert_repository
+    pub workspace_root: PathBuf,
+    pub started_at: Instant,
+}
+```
 
 ### What was removed
 
@@ -177,6 +203,28 @@ The execution layer follows a **spec-vs-status** pattern (analogous to Kubernete
 
 ### What was added this session
 
+#### Phase 1: New Repository Traits
+- `WorkspaceRepository` trait in `crates/registry/src/domain/workspace_repository.rs` — implemented by `WorkspaceStore` in mcp-server
+- `InsightsRepository` trait in `crates/insights/src/domain/insights_repository.rs` — implemented by `InsightsStore` in mcp-server
+- `AlertRepository` trait in `crates/metrics/src/domain/alert_repository.rs` — implemented by `AlertStore` in mcp-server
+- `ArtifactRepository` trait in `crates/artifact/src/domain/artifact_repository.rs` — implemented by `ArtifactStore` in mcp-server
+
+#### Phase 2: Type Reorganization
+- All MCP types now organized in `crates/mcp-server/src/types/`: `workflow_dto.rs`, `execution.rs`, `agent.rs`, `skill.rs`, `prompt.rs`, `artifact.rs`, `insight.rs`, `metrics.rs`, `impact.rs`
+- DTO naming convention: domain types stay in domain crates, MCP/presentation types use `*Dto` suffix (`WorkflowDto`, `ExecutionStateDto`, `StageOutputDto`, `TriggerInfoDto`)
+
+#### Phase 3: AppState Context Decomposition
+- `AppState` decomposed into `RegistryContext`, `ExecutionContext`, `InsightsContext`, `MetricsContext`
+- Each context holds its own repositories and services
+
+#### Bug Fixes & Improvements
+- `insights_handler.rs` now uses injected `analytics_service` from `state.insights.analytics_service` instead of creating local instance
+
+#### Dead Code Removed
+- `sse_emitter` — was dead in AppState (SSE via MetricsBroadcaster externally)
+- `metrics_aggregator` — was dead in AppState (never used)
+
+#### Prior Session
 - `ArtifactStore` — artifact metadata persistence seam (list/get/delete/download/get_location/get_storage_info)
 - `ExecutionStore::pause()` / `resume()` — REST pause/resume no longer raw SQL
 - REST `get_metrics` — now queries `ExecutionStore` for real data (was hardcoded stub)

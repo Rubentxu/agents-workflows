@@ -12,6 +12,15 @@ pub enum MetricsError {
 
     #[error("Streaming error: {0}")]
     StreamError(String),
+
+    #[error("Alert not found: {0}")]
+    AlertNotFound(i64),
+
+    #[error("Invalid alert state: {0}")]
+    InvalidAlertState(String),
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }
 
 pub type MetricsResult<T> = Result<T, MetricsError>;

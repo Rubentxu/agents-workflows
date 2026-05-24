@@ -21,6 +21,9 @@ pub enum ArtifactError {
 
     #[error("Content type not supported: {0}")]
     UnsupportedContentType(String),
+
+    #[error("Repository error: {0}")]
+    RepositoryError(String),
 }
 
 pub type ArtifactResult<T> = Result<T, ArtifactError>;

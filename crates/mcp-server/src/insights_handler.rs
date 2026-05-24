@@ -5,7 +5,6 @@
 use crate::state::AppState;
 use crate::types::*;
 use crate::metrics_sse::MetricsBroadcaster;
-use insights::AnalyticsService;
 use rusqlite::{params_from_iter, ToSql};
 use std::sync::Arc;
 
@@ -18,8 +17,9 @@ impl InsightsMcpHandler {
         Self { state }
     }
 
+    #[allow(deprecated)]
     pub async fn insights_log(&self, params: InsightsLogParams) -> Result<Insight, String> {
-        let conn = self.state.db.connection()
+        let conn = self.state.db().connection()
             .map_err(|e| format!("DB error: {}", e))?;
 
         let data_json = serde_json::to_string(&params.data)
@@ -43,8 +43,9 @@ impl InsightsMcpHandler {
         })
     }
 
+    #[allow(deprecated)]
     pub async fn insights_query(&self, params: InsightsQueryParams) -> Result<Vec<Insight>, String> {
-        let conn = self.state.db.connection()
+        let conn = self.state.db().connection()
             .map_err(|e| format!("DB error: {}", e))?;
 
         let mut sql = String::from("SELECT id, execution_id, stage_id, insight_type, data_json, created_at FROM insights WHERE 1=1");
@@ -86,7 +87,7 @@ impl InsightsMcpHandler {
     }
 
     pub async fn insights_aggregate(&self, params: InsightsAggregateParams) -> Result<InsightsAggregateResult, String> {
-        let conn = self.state.db.connection()
+        let conn = self.state.db().connection()
             .map_err(|e| format!("DB error: {}", e))?;
 
         let mut stmt = conn.prepare(
@@ -115,7 +116,8 @@ impl InsightsMcpHandler {
         .filter_map(|r| r.ok())
         .collect();
 
-        let analytics = AnalyticsService::new();
+        // Use the injected analytics_service from state
+        let analytics = &self.state.insights.analytics_service;
 
         if let Some(stage_id) = params.stage_id {
             let stage_analytics = analytics.aggregate_stage(&insights, &stage_id);
@@ -164,13 +166,8 @@ impl InsightsMcpHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execution_store::ExecutionStore;
     use registry::infrastructure::db::Database;
     use std::sync::Arc;
-
-    fn create_test_db() -> Arc<Database> {
-        Arc::new(Database::open_in_memory().expect("in-memory db"))
-    }
 
     fn seed_insights(db: &Arc<Database>, execution_arn: &str) {
         let conn = db.connection().expect("db connection");
@@ -212,32 +209,20 @@ mod tests {
         ).expect("insert workflow_completed");
     }
 
-    fn create_test_state(db: Arc<Database>) -> Arc<AppState> {
-        Arc::new(AppState {
-            node_service: Arc::new(registry::application::node_service::NodeService::new(
-                Arc::new(registry::infrastructure::node_repository::SqliteNodeRepository::new(db.clone()))
-            )),
-            db: db.clone(),
-            execution_store: Arc::new(ExecutionStore::new(db.clone())),
-            artifact_store: Arc::new(crate::artifact_store::ArtifactStore::new(db.clone())),
-            artifact_service: Arc::new(artifact::application::artifact_service::ArtifactService::new(
-                std::path::PathBuf::from("/tmp/test-artifacts")
-            )),
-            analytics_service: Arc::new(insights::AnalyticsService::new()),
-            sse_emitter: Arc::new(metrics::application::SseEmitter::new()),
-            metrics_aggregator: Arc::new(metrics::application::MetricsAggregator::new()),
-            workspace_root: std::path::PathBuf::from("/tmp/test-workspace"),
-        })
+    fn create_test_state() -> (Arc<AppState>, Arc<Database>) {
+        let (state, _temp) = AppState::test().expect("test state");
+        let state = Arc::new(state);
+        let db = state.db().clone();
+        (state, db)
     }
 
     #[tokio::test]
     async fn test_insights_aggregate_execution_level_counts() {
-        let db = create_test_db();
+        let (state, db) = create_test_state();
         let execution_arn = "arn:local:workspace/test:execution/1";
 
         seed_insights(&db, execution_arn);
 
-        let state = create_test_state(db);
         let handler = InsightsMcpHandler::new(state, Arc::new(crate::metrics_sse::MetricsBroadcaster::new()));
 
         let result = handler.insights_aggregate(InsightsAggregateParams {
@@ -264,12 +249,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_insights_aggregate_stage_level_counts() {
-        let db = create_test_db();
+        let (state, db) = create_test_state();
         let execution_arn = "arn:local:workspace/test:execution/2";
 
         seed_insights(&db, execution_arn);
 
-        let state = create_test_state(db);
         let handler = InsightsMcpHandler::new(state, Arc::new(crate::metrics_sse::MetricsBroadcaster::new()));
 
         let result = handler.insights_aggregate(InsightsAggregateParams {

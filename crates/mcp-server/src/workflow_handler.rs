@@ -4,6 +4,7 @@
 
 use crate::state::AppState;
 use crate::types::*;
+use crate::types::execution::WorkflowExecuteParams;
 use crate::metrics_sse::MetricsBroadcaster;
 use crate::execution_repository_adapter::ExecutionRepositoryAdapter;
 use crate::handler::McpHandler;
@@ -11,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use workflow::application::{ExecutionApplicationService, WorkflowNavigator};
 use workflow::application::parse_registry_workflow_yaml;
-use workflow::domain::{Workflow as DomainWorkflow, TriggerInfo as DomainTriggerInfo};
+use workflow::domain::Workflow as DomainWorkflow;
 
 /// Workflow MCP Handler - handles workflow and execution tool calls
 pub struct WorkflowMcpHandler {
@@ -25,7 +26,7 @@ impl WorkflowMcpHandler {
     }
 
     fn execution_service(&self) -> ExecutionApplicationService<ExecutionRepositoryAdapter> {
-        let repo = Arc::new(ExecutionRepositoryAdapter::new(self.state.execution_store.clone()));
+        let repo = Arc::new(ExecutionRepositoryAdapter::new(self.state.execution_store().clone()));
         ExecutionApplicationService::new(repo)
     }
 
@@ -48,7 +49,7 @@ impl WorkflowMcpHandler {
         let workflows: Vec<WorkflowSummary> = nodes
             .into_iter()
             .map(|node| {
-                let description = McpHandler::extract_description(&node);
+                let description = McpHandler::description_from_metadata(&node);
                 WorkflowSummary {
                     arn: node.id.clone(), // id is the ARN
                     name: node.name,
@@ -63,6 +64,7 @@ impl WorkflowMcpHandler {
 
     /// Get a workflow by ARN.
     /// config_json stores the Kubernetes-style YAML manifest.
+    #[allow(deprecated)]
     pub async fn workflow_get(&self, params: GetByArnParams) -> Result<Workflow, String> {
         let node = self.state.get_workflow(&params.arn).await
             .map_err(|e| e.to_string())?
@@ -123,7 +125,7 @@ impl WorkflowMcpHandler {
                 }
             }
             None => {
-                let description = McpHandler::extract_description(&node);
+                let description = McpHandler::description_from_metadata(&node);
                 Workflow {
                     arn: node.id.clone(),
                     name: node.name,
@@ -142,6 +144,7 @@ impl WorkflowMcpHandler {
     }
 
     /// Get the DAG for a workflow
+    #[allow(deprecated)]
     pub async fn workflow_get_dag(&self, params: GetByArnParams) -> Result<Dag, String> {
         // Get the workflow
         let workflow = self.workflow_get(params).await?;
@@ -178,6 +181,7 @@ impl WorkflowMcpHandler {
     }
 
     /// Calculate parallel execution groups
+    #[allow(deprecated)]
     fn calculate_parallel_groups(&self, stages: &[&Stage]) -> Vec<Vec<String>> {
         let mut groups: Vec<Vec<String>> = Vec::new();
         let mut completed: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -214,6 +218,7 @@ impl WorkflowMcpHandler {
     }
 
     /// Create execution - creates execution record in DB
+    #[allow(deprecated)]
     pub async fn create_execution(&self, params: WorkflowExecuteParams) -> Result<Execution, String> {
         // 1. Load workflow node from registry
         let workflow_node = self.state.get_workflow(&params.workflow_arn).await
@@ -230,10 +235,18 @@ impl WorkflowMcpHandler {
         );
 
         // 6. Create and start execution through the application service
-        let domain_trigger = DomainTriggerInfo {
+        // Use TriggerInfoDto (not domain type) and let the mapper handle conversion
+        let trigger_info_dto = TriggerInfoDto {
             trigger_type: params.trigger_type.clone().unwrap_or_else(|| "manual".to_string()),
-            source: None,
+            source: params.source.clone(),  // Now properly captured from params
             input: serde_json::to_value(params.input.clone()).unwrap_or(serde_json::Value::Null),
+        };
+        // Convert DTO to domain type for the service call
+        // Note: We create the domain TriggerInfo here but using the DTO's data properly
+        let domain_trigger = workflow::domain::TriggerInfo {
+            trigger_type: trigger_info_dto.trigger_type.clone(),
+            source: trigger_info_dto.source.clone(),
+            input: trigger_info_dto.input.clone(),
         };
         let service = self.execution_service();
         service
@@ -284,8 +297,9 @@ impl WorkflowMcpHandler {
                     )
                 })
                 .collect(),
-            triggered_by: TriggerInfo {
+            triggered_by: TriggerInfoDto {
                 trigger_type: domain_state.triggered_by.trigger_type,
+                source: domain_state.triggered_by.source.clone(),
                 input: domain_state.triggered_by.input,
             },
             started_at: started_at_mcp,
@@ -300,8 +314,9 @@ impl WorkflowMcpHandler {
     // =============================================================================
 
     /// Get execution state - reads from database
+    #[allow(deprecated)]
     pub async fn get_execution(&self, params: WorkflowGetStateParams) -> Result<ExecutionState, String> {
-        let execution = self.state.execution_store.get(&params.execution_arn)?;
+        let execution = self.state.execution_store().get(&params.execution_arn)?;
         let all_stage_ids = self
             .state
             .get_workflow_stage_ids(&execution.workflow_arn)
@@ -327,6 +342,7 @@ impl WorkflowMcpHandler {
     }
 
     /// Update execution state - persists to database
+    #[allow(deprecated)]
     pub async fn update_execution(&self, params: WorkflowUpdateStateParams) -> Result<ExecutionState, String> {
         let service = self.execution_service();
         let stage_outputs = params.stage_outputs.map(|outputs| {
@@ -411,6 +427,7 @@ impl WorkflowMcpHandler {
     }
 
     /// Abort a workflow execution
+    #[allow(deprecated)]
     pub async fn workflow_abort(&self, params: WorkflowAbortParams) -> Result<ExecutionState, String> {
         let service = self.execution_service();
         if let Err(e) = service.abort_execution(&params.execution_arn) {
@@ -431,12 +448,13 @@ impl WorkflowMcpHandler {
 
     /// List executions
     pub async fn execution_list(&self, params: ExecutionListParams) -> Result<Vec<ExecutionSummary>, String> {
-        self.state.execution_store.list(&params)
+        self.state.execution_store().list(&params)
     }
 
     /// Get an execution by ARN
+    #[allow(deprecated)]
     pub async fn execution_get(&self, params: GetByArnParams) -> Result<Execution, String> {
-        let execution = self.state.execution_store.get(&params.arn)?;
+        let execution = self.state.execution_store().get(&params.arn)?;
         let all_stage_ids = self
             .state
             .get_workflow_stage_ids(&execution.workflow_arn)
@@ -481,7 +499,7 @@ impl WorkflowMcpHandler {
             status: None,
             limit: params.limit,
         };
-        let summaries = self.state.execution_store.list(&list_params)
+        let summaries = self.state.execution_store().list(&list_params)
             .map_err(|e| format!("Failed to list executions: {}", e))?;
 
         Ok(summaries)
@@ -489,17 +507,13 @@ impl WorkflowMcpHandler {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::handler::McpHandler;
-    use crate::execution_store::ExecutionStore;
-    use crate::metrics_sse::MetricsBroadcaster;
-    use crate::state::AppState;
-    use registry::application::node_service::NodeService;
-    use registry::domain::{Node, NodeType};
-    use registry::infrastructure::db::Database;
-    use registry::infrastructure::node_repository::SqliteNodeRepository;
-    use std::sync::Arc;
+ mod tests {
+     use super::*;
+     use crate::handler::McpHandler;
+     use crate::metrics_sse::MetricsBroadcaster;
+     use crate::state::AppState;
+     use registry::domain::{Node, NodeType};
+     use std::sync::Arc;
 
     fn test_workflow_node() -> Node {
         let yaml = r#"
@@ -531,38 +545,11 @@ stages:
     }
 
     fn make_workflow_handler() -> (Arc<McpHandler>, WorkflowMcpHandler) {
-        use std::path::PathBuf;
-
-        let db = Arc::new(Database::open_in_memory().expect("in-memory db"));
-        let repository = Arc::new(SqliteNodeRepository::new(db.clone()));
-        let node_service = Arc::new(NodeService::new(repository));
-        node_service
-            .create(test_workflow_node())
-            .expect("create workflow node");
-
-        let execution_store = Arc::new(ExecutionStore::new(db.clone()));
-        let artifact_service = Arc::new(artifact::application::artifact_service::ArtifactService::new(
-            PathBuf::from("/tmp/test-artifacts")
-        ));
-        let analytics_service = Arc::new(insights::AnalyticsService::new());
-        let sse_emitter = Arc::new(metrics::application::SseEmitter::new());
-        let metrics_aggregator = Arc::new(metrics::application::MetricsAggregator::new());
-        let artifact_store = Arc::new(crate::artifact_store::ArtifactStore::new(db.clone()));
-        let state = Arc::new(AppState {
-            node_service,
-            db,
-            execution_store,
-            artifact_store,
-            artifact_service,
-            analytics_service,
-            sse_emitter,
-            metrics_aggregator,
-            workspace_root: PathBuf::from("/tmp/test-workspace"),
-        });
-
+        let (state, _temp) = AppState::test().expect("test state");
+        let state = Arc::new(state);
+        state.node_service().create(test_workflow_node()).expect("create workflow node");
         let mcp_handler = Arc::new(McpHandler::new(state.clone(), Arc::new(MetricsBroadcaster::new())));
         let workflow_handler = WorkflowMcpHandler::new(state, Arc::new(MetricsBroadcaster::new()), mcp_handler.clone());
-
         (mcp_handler, workflow_handler)
     }
 
@@ -579,6 +566,7 @@ stages:
                     serde_json::json!("test"),
                 )])),
                 trigger_type: Some("manual".to_string()),
+                source: None,
             })
             .await
             .expect("create execution");
@@ -613,6 +601,7 @@ stages:
                     serde_json::json!("test"),
                 )])),
                 trigger_type: Some("manual".to_string()),
+                source: None,
             })
             .await
             .expect("create execution");
@@ -658,6 +647,7 @@ stages:
                     serde_json::json!("test goal"),
                 )])),
                 trigger_type: Some("manual".to_string()),
+                source: None,
             })
             .await
             .expect("create execution should succeed");
@@ -684,6 +674,7 @@ stages:
                     serde_json::json!("test"),
                 )])),
                 trigger_type: Some("manual".to_string()),
+                source: None,
             })
             .await
             .expect("create execution");
@@ -723,6 +714,7 @@ stages:
                 workspace_id: "test-workspace".to_string(),
                 input: Some(std::collections::HashMap::new()),
                 trigger_type: Some("manual".to_string()),
+                source: None,
             })
             .await
             .expect("create execution");
@@ -749,6 +741,7 @@ stages:
                 workspace_id: "test-workspace".to_string(),
                 input: Some(std::collections::HashMap::new()),
                 trigger_type: Some("manual".to_string()),
+                source: None,
             })
             .await
             .expect("create execution");
@@ -773,6 +766,7 @@ stages:
                 workspace_id: "test-workspace".to_string(),
                 input: Some(std::collections::HashMap::new()),
                 trigger_type: Some("manual".to_string()),
+                source: None,
             })
             .await
             .expect("create execution");
@@ -813,6 +807,7 @@ stages:
                     ("phase".to_string(), serde_json::json!("explore")),
                 ])),
                 trigger_type: Some("manual".to_string()),
+                source: None,
             })
             .await
             .expect("create execution");
@@ -837,6 +832,7 @@ stages:
                 workspace_id: "test-workspace".to_string(),
                 input: Some(std::collections::HashMap::new()),
                 trigger_type: Some("manual".to_string()),
+                source: None,
             })
             .await
             .expect("create execution");

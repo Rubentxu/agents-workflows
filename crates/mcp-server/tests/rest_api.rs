@@ -14,45 +14,18 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 use axum::body::to_bytes;
 use std::sync::Arc;
-use std::path::PathBuf;
 use tempfile::TempDir;
 
-// Import from crate
-use mcp_server::execution_store::ExecutionStore;
-use mcp_server::rest::{create_rest_router, RestState};
+use mcp_server::rest::create_rest_router;
 use mcp_server::state::AppState;
-use registry::application::node_service::NodeService;
-use registry::infrastructure::db::Database;
-use registry::infrastructure::node_repository::SqliteNodeRepository;
-use insights::AnalyticsService;
-use metrics::application::{SseEmitter, MetricsAggregator};
 
 // =============================================================================
 // Test State Setup
 // =============================================================================
 
-fn create_test_rest_state() -> (RestState, TempDir) {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let db_path = temp_dir.path().join("test.db");
-    let db = Arc::new(Database::open(db_path.to_str().unwrap()).expect("Failed to open test DB"));
-    let repository = Arc::new(SqliteNodeRepository::new(db.clone()));
-    let node_service = Arc::new(NodeService::new(repository));
-    let execution_store = Arc::new(ExecutionStore::new(db.clone()));
-    let artifact_store = Arc::new(mcp_server::artifact_store::ArtifactStore::new(db.clone()));
-    let artifact_service = Arc::new(artifact::application::artifact_service::ArtifactService::new(
-        PathBuf::from(temp_dir.path().join("artifacts"))
-    ));
-    let analytics_service = Arc::new(AnalyticsService::new());
-    let sse_emitter = Arc::new(SseEmitter::new());
-    let metrics_aggregator = Arc::new(MetricsAggregator::new());
-    let app_state = Arc::new(AppState { node_service, db, execution_store, artifact_store, artifact_service, analytics_service, sse_emitter, metrics_aggregator, workspace_root: PathBuf::from(temp_dir.path()) });
-    let state = RestState::new(app_state);
-    (state, temp_dir)
-}
-
 fn create_test_router() -> (Router, TempDir) {
-    let (state, temp_dir) = create_test_rest_state();
-    (create_rest_router(state), temp_dir)
+    let (state, temp_dir) = AppState::test().expect("test state");
+    (create_rest_router(Arc::new(state)), temp_dir)
 }
 
 // =============================================================================

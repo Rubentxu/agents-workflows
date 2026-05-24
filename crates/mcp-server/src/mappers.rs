@@ -14,35 +14,42 @@ use std::collections::HashMap;
 // TriggerInfo Mappers
 // ============================================================================
 
-/// Convert domain TriggerInfo to MCP TriggerInfo
-impl From<&DomainTriggerInfo> for TriggerInfo {
+/// Convert domain TriggerInfo to MCP TriggerInfoDto
+impl From<&DomainTriggerInfo> for TriggerInfoDto {
     fn from(domain: &DomainTriggerInfo) -> Self {
-        TriggerInfo {
+        TriggerInfoDto {
             trigger_type: domain.trigger_type.clone(),
+            source: domain.source.clone(),
             input: domain.input.clone(),
         }
     }
 }
 
-/// Convert MCP TriggerInfo to domain TriggerInfo
-impl From<&TriggerInfo> for DomainTriggerInfo {
-    fn from(mcp: &TriggerInfo) -> Self {
+/// Convert MCP TriggerInfoDto to domain TriggerInfo
+impl From<&TriggerInfoDto> for DomainTriggerInfo {
+    fn from(mcp: &TriggerInfoDto) -> Self {
         DomainTriggerInfo {
             trigger_type: mcp.trigger_type.clone(),
-            source: None, // MCP seam doesn't expose source
+            source: mcp.source.clone(),
             input: mcp.input.clone(),
         }
     }
+}
+
+/// Helper function to convert TriggerInfoDto to domain TriggerInfo
+/// This avoids the ambiguity issue with `T::from()` in Rust
+pub fn trigger_info_dto_to_domain(dto: &TriggerInfoDto) -> DomainTriggerInfo {
+    DomainTriggerInfo::from(dto)
 }
 
 // ============================================================================
 // StageOutput Mappers
 // ============================================================================
 
-/// Convert domain StageOutput to MCP StageOutput
-impl From<&DomainStageOutput> for StageOutput {
+/// Convert domain StageOutput to MCP StageOutputDto
+impl From<&DomainStageOutput> for StageOutputDto {
     fn from(_domain: &DomainStageOutput) -> Self {
-        StageOutput {
+        StageOutputDto {
             artifacts: Vec::new(), // Domain doesn't have ArtifactRef, only ARNs
         }
     }
@@ -52,18 +59,18 @@ impl From<&DomainStageOutput> for StageOutput {
 // ExecutionState Mappers
 // ============================================================================
 
-/// Convert domain ExecutionState to MCP ExecutionState
-/// Note: MCP ExecutionState is a subset of domain - fields like triggered_by,
+/// Convert domain ExecutionState to MCP ExecutionStateDto
+/// Note: MCP ExecutionStateDto is a subset of domain - fields like triggered_by,
 /// started_at, completed_at exist in domain but not in MCP type.
-impl From<&DomainExecutionState> for ExecutionState {
+impl From<&DomainExecutionState> for ExecutionStateDto {
     fn from(domain: &DomainExecutionState) -> Self {
-        let stage_outputs: HashMap<String, StageOutput> = domain
+        let stage_outputs: HashMap<String, StageOutputDto> = domain
             .stage_outputs
             .iter()
-            .map(|(k, v)| (k.clone(), StageOutput::from(v)))
+            .map(|(k, v)| (k.clone(), StageOutputDto::from(v)))
             .collect();
 
-        ExecutionState {
+        ExecutionStateDto {
             execution_arn: domain.execution_arn.clone(),
             workflow_arn: domain.workflow_arn.clone(),
             status: domain.status.as_str().to_string(),
@@ -76,10 +83,10 @@ impl From<&DomainExecutionState> for ExecutionState {
     }
 }
 
-/// Build MCP ExecutionState from PersistedExecution (database read model)
-impl From<&PersistedExecution> for ExecutionState {
+/// Build MCP ExecutionStateDto from PersistedExecution (database read model)
+impl From<&PersistedExecution> for ExecutionStateDto {
     fn from(persisted: &PersistedExecution) -> Self {
-        ExecutionState {
+        ExecutionStateDto {
             execution_arn: persisted.arn.clone(),
             workflow_arn: persisted.workflow_arn.clone(),
             status: persisted.status.clone(),
@@ -108,23 +115,25 @@ mod tests {
             input: serde_json::json!({"goal": "test"}),
         };
 
-        let mcp: TriggerInfo = TriggerInfo::from(&domain);
+        let mcp: TriggerInfoDto = TriggerInfoDto::from(&domain);
 
         assert_eq!(mcp.trigger_type, "manual");
+        assert_eq!(mcp.source, Some("cli".to_string()));
         assert_eq!(mcp.input, serde_json::json!({"goal": "test"}));
     }
 
     #[test]
     fn test_mcp_trigger_info_to_domain() {
-        let mcp = TriggerInfo {
+        let mcp = TriggerInfoDto {
             trigger_type: "api".to_string(),
+            source: Some("webhook".to_string()),
             input: serde_json::json!({"key": "value"}),
         };
 
         let domain: DomainTriggerInfo = DomainTriggerInfo::from(&mcp);
 
         assert_eq!(domain.trigger_type, "api");
-        assert!(domain.source.is_none()); // MCP doesn't expose source
+        assert_eq!(domain.source, Some("webhook".to_string())); // MCP now exposes source
         assert_eq!(domain.input, serde_json::json!({"key": "value"}));
     }
 
@@ -155,7 +164,7 @@ mod tests {
             updated_at: Utc::now(),
         };
 
-        let mcp: ExecutionState = ExecutionState::from(&domain);
+        let mcp: ExecutionStateDto = ExecutionStateDto::from(&domain);
 
         assert_eq!(mcp.execution_arn, "arn:test");
         assert_eq!(mcp.workflow_arn, "arn:workflow");

@@ -11,7 +11,8 @@ use axum::{
 };
 
 use super::rest_types::*;
-use super::rest::RestState;
+use crate::state::AppState;
+use std::sync::Arc;
 use crate::types::ExecutionListParams;
 use crate::resources::agent;
 use crate::resources::skill;
@@ -39,48 +40,46 @@ fn validate_arn(arn: &str) -> Result<String, (StatusCode, Json<ErrorResponse>)> 
 // ============================================================================
 
 pub async fn list_workspaces(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let conn = state.db().connection()
+    let workspaces = state.workspace_store().list()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
 
-    let mut stmt = conn.prepare(
-        "SELECT id, name, description, created_at FROM workspaces ORDER BY created_at DESC"
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
+    let workspaces_json: Vec<_> = workspaces.iter().map(|w| {
+        serde_json::json!({
+            "id": w.id,
+            "name": w.name,
+            "description": w.description,
+            "created_at": w.created_at,
+        })
+    }).collect();
 
-    let rows = stmt.query_map([], |row| {
-        Ok(serde_json::json!({
-            "id": row.get::<_, String>(0)?,
-            "name": row.get::<_, String>(1)?,
-            "description": row.get::<_, Option<String>>(2)?,
-            "created_at": row.get::<_, String>(3)?,
-        }))
-    }).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
-
-    let workspaces: Vec<_> = rows.filter_map(|r| r.ok()).collect();
-    Ok(Json(serde_json::json!({ "workspaces": workspaces })))
+    Ok(Json(serde_json::json!({ "workspaces": workspaces_json })))
 }
 
 pub async fn create_workspace(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CreateWorkspaceRequest>,
 ) -> Result<(StatusCode, Json<WorkspaceResponse>), (StatusCode, Json<ErrorResponse>)> {
-    let conn = state.db().connection()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
+    use registry::domain::Workspace;
 
     let id = req.id.clone().unwrap_or_else(|| format!("workspace-{}", uuid::Uuid::new_v4().to_string().replace("-", "")[..8].to_string()));
-    let now = chrono::Utc::now().to_rfc3339();
 
-    conn.execute(
-        "INSERT INTO workspaces (id, name, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![id, req.name, req.description, now, now],
-    ).map_err(|e| {
-        if e.to_string().contains("UNIQUE constraint failed") {
-            (StatusCode::CONFLICT, Json(ErrorResponse::new("ALREADY_EXISTS", &format!("Workspace '{}' already exists", id))))
-        } else {
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string())))
+    let workspace = Workspace::new(id.clone(), req.name.clone(), req.description.clone());
+
+    if let Err(e) = state.workspace_store().create(&workspace) {
+        let msg = e.to_string();
+        if msg.contains("already exists") {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(ErrorResponse::new("ALREADY_EXISTS", &format!("Workspace '{}' already exists", id))),
+            ));
         }
-    })?;
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new("INTERNAL_ERROR", &msg)),
+        ));
+    }
 
     Ok((
         StatusCode::CREATED,
@@ -88,58 +87,47 @@ pub async fn create_workspace(
             id: id.clone(),
             name: req.name,
             description: req.description,
-            created_at: now.clone(),
+            created_at: workspace.created_at.clone(),
             stats: None,
         }),
     ))
 }
 
 pub async fn get_workspace(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<WorkspaceResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let conn = state.db().connection()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
+    let workspace = state.workspace_store().get(&id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Workspace '{}' not found", id))),
+            )
+        })?;
 
-    let mut stmt = conn.prepare(
-        "SELECT id, name, description, created_at FROM workspaces WHERE id = ?1"
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
-
-    let row = stmt.query_row([&id], |row| {
-        Ok(WorkspaceResponse {
-            id: row.get::<_, String>(0)?,
-            name: row.get::<_, String>(1)?,
-            description: row.get::<_, Option<String>>(2)?,
-            created_at: row.get::<_, String>(3)?,
-            stats: None,
-        })
-    }).map_err(|e| {
-        if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
-            (StatusCode::NOT_FOUND, Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Workspace '{}' not found", id))))
-        } else {
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string())))
-        }
-    })?;
-
-    Ok(Json(row))
+    Ok(Json(WorkspaceResponse {
+        id: workspace.id,
+        name: workspace.name,
+        description: workspace.description,
+        created_at: workspace.created_at,
+        stats: None,
+    }))
 }
 
 pub async fn delete_workspace(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let conn = state.db().connection()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
-
-    let deleted = conn.execute("DELETE FROM workspaces WHERE id = ?1", [&id])
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
-
-    if deleted == 0 {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Workspace '{}' not found", id))),
-        ));
-    }
+    state.workspace_store().delete(&id)
+        .map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("not found") {
+                (StatusCode::NOT_FOUND, Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Workspace '{}' not found", id))))
+            } else {
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &msg)))
+            }
+        })?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -149,38 +137,38 @@ pub async fn delete_workspace(
 // ============================================================================
 
 pub async fn list_workflows(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    workflow::list(std::sync::Arc::new(state)).await
+    workflow::list(state).await
 }
 
 pub async fn create_workflow(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CreateWorkflowRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
-    workflow::create(std::sync::Arc::new(state), req).await
+    workflow::create(state, req).await
 }
 
 pub async fn get_workflow(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    workflow::get(std::sync::Arc::new(state), &arn).await
+    workflow::get(state, &arn).await
 }
 
 pub async fn update_workflow(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
     Json(req): Json<UpdateWorkflowRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    workflow::update(std::sync::Arc::new(state), &arn, req).await
+    workflow::update(state, &arn, req).await
 }
 
 pub async fn delete_workflow(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    workflow::delete(std::sync::Arc::new(state), &arn).await
+    workflow::delete(state, &arn).await
 }
 
 // ============================================================================
@@ -188,38 +176,38 @@ pub async fn delete_workflow(
 // ============================================================================
 
 pub async fn list_agents(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    agent::list(std::sync::Arc::new(state)).await
+    agent::list(state).await
 }
 
 pub async fn create_agent(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CreateAgentRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
-    agent::create(std::sync::Arc::new(state), req).await
+    agent::create(state, req).await
 }
 
 pub async fn get_agent(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    agent::get(std::sync::Arc::new(state), &arn).await
+    agent::get(state, &arn).await
 }
 
 pub async fn update_agent(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
     Json(req): Json<UpdateAgentRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    agent::update(std::sync::Arc::new(state), &arn, req).await
+    agent::update(state, &arn, req).await
 }
 
 pub async fn delete_agent(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    agent::delete(std::sync::Arc::new(state), &arn).await
+    agent::delete(state, &arn).await
 }
 
 // ============================================================================
@@ -231,38 +219,38 @@ pub async fn delete_agent(
 // ============================================================================
 
 pub async fn list_skills(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    skill::list(std::sync::Arc::new(state)).await
+    skill::list(state).await
 }
 
 pub async fn create_skill(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CreateSkillRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
-    skill::create(std::sync::Arc::new(state), req).await
+    skill::create(state, req).await
 }
 
 pub async fn get_skill(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    skill::get(std::sync::Arc::new(state), &arn).await
+    skill::get(state, &arn).await
 }
 
 pub async fn update_skill(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
     Json(req): Json<UpdateSkillRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    skill::update(std::sync::Arc::new(state), &arn, req).await
+    skill::update(state, &arn, req).await
 }
 
 pub async fn delete_skill(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    skill::delete(std::sync::Arc::new(state), &arn).await
+    skill::delete(state, &arn).await
 }
 
 // ============================================================================
@@ -270,38 +258,38 @@ pub async fn delete_skill(
 // ============================================================================
 
 pub async fn list_prompts(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    prompt::list(std::sync::Arc::new(state)).await
+    prompt::list(state).await
 }
 
 pub async fn create_prompt(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CreatePromptRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
-    prompt::create(std::sync::Arc::new(state), req).await
+    prompt::create(state, req).await
 }
 
 pub async fn get_prompt(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    prompt::get(std::sync::Arc::new(state), &arn).await
+    prompt::get(state, &arn).await
 }
 
 pub async fn update_prompt(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
     Json(req): Json<UpdatePromptRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    prompt::update(std::sync::Arc::new(state), &arn, req).await
+    prompt::update(state, &arn, req).await
 }
 
 pub async fn delete_prompt(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    prompt::delete(std::sync::Arc::new(state), &arn).await
+    prompt::delete(state, &arn).await
 }
 
 // ============================================================================
@@ -309,7 +297,7 @@ pub async fn delete_prompt(
 // ============================================================================
 
 pub async fn list_executions(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Query(query): Query<ExecutionListQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
     let params = ExecutionListParams {
@@ -318,18 +306,18 @@ pub async fn list_executions(
         status: query.status,
         limit: query.limit.map(|l| l as usize).or(Some(50)),
     };
-    let summaries = state.app_state.execution_store.list(&params)
+    let summaries = state.execution_store().list(&params)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
 
     Ok(Json(serde_json::json!({ "executions": summaries })))
 }
 
 pub async fn get_execution(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
     let arn = validate_arn(&arn)?;
-    let execution = state.app_state.execution_store.get(&arn)
+    let execution = state.execution_store().get(&arn)
         .map_err(|e| {
             if e.contains("not found") {
                 (StatusCode::NOT_FOUND, Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Execution '{}' not found", arn))))
@@ -354,11 +342,11 @@ pub async fn get_execution(
 }
 
 pub async fn pause_execution(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
     let arn = validate_arn(&arn)?;
-    state.app_state.execution_store.pause(&arn)
+    state.execution_store().pause(&arn)
         .map_err(|e| {
             if e.contains("not found") {
                 (StatusCode::NOT_FOUND, Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Execution '{}' not found", arn))))
@@ -374,11 +362,11 @@ pub async fn pause_execution(
 }
 
 pub async fn resume_execution(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
     let arn = validate_arn(&arn)?;
-    state.app_state.execution_store.resume(&arn)
+    state.execution_store().resume(&arn)
         .map_err(|e| {
             if e.contains("not found") {
                 (StatusCode::NOT_FOUND, Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Execution '{}' not found", arn))))
@@ -394,12 +382,12 @@ pub async fn resume_execution(
 }
 
 pub async fn abort_execution(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
     let arn = validate_arn(&arn)?;
     let now = chrono::Utc::now().to_rfc3339();
-    state.app_state.execution_store.abort(&arn, &now)
+    state.execution_store().abort(&arn, &now)
         .map_err(|e| {
             if e.contains("not found") {
                 (StatusCode::NOT_FOUND, Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Execution '{}' not found", arn))))
@@ -409,7 +397,7 @@ pub async fn abort_execution(
         })?;
 
     // Cleanup filesystem artifacts for this execution
-    if let Err(e) = state.app_state.artifact_service.cleanup_for_execution(&arn) {
+    if let Err(e) = state.artifact_service().cleanup_for_execution(&arn) {
         // Log the error but don't fail the request - execution was already aborted
         eprintln!("Warning: failed to cleanup artifacts for execution '{}': {}", arn, e);
     }
@@ -425,20 +413,20 @@ pub async fn abort_execution(
 // ============================================================================
 
 pub async fn list_artifacts(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Query(_query): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let artifacts = state.app_state.artifact_store.list(100)
+    let artifacts = state.artifact_store().list(100)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
     Ok(Json(serde_json::json!({ "artifacts": artifacts })))
 }
 
 pub async fn get_artifact(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
     let arn = validate_arn(&arn)?;
-    let artifact = state.app_state.artifact_store.get(&arn)
+    let artifact = state.artifact_store().get(&arn)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
     match artifact {
         Some(data) => Ok(Json(data)),
@@ -450,13 +438,13 @@ pub async fn get_artifact(
 }
 
 pub async fn delete_artifact(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let arn = validate_arn(&arn)?;
 
     // Get storage info for file cleanup
-    let storage_info = state.app_state.artifact_store.get_storage_info(&arn)
+    let storage_info = state.artifact_store().get_storage_info(&arn)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
 
     let (storage_type, location) = match storage_info {
@@ -468,7 +456,7 @@ pub async fn delete_artifact(
     };
 
     // Delete from DB
-    let deleted = state.app_state.artifact_store.delete(&arn)
+    let deleted = state.artifact_store().delete(&arn)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
 
     if !deleted {
@@ -490,12 +478,12 @@ pub async fn delete_artifact(
 }
 
 pub async fn download_artifact(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<Response<Body>, (StatusCode, Json<ErrorResponse>)> {
     let arn = validate_arn(&arn)?;
 
-    let download_info = state.app_state.artifact_store.get_download_info(&arn)
+    let download_info = state.artifact_store().get_download_info(&arn)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
 
     let (storage_type, location, content_type, name) = match download_info {
@@ -528,49 +516,34 @@ pub async fn download_artifact(
 // ============================================================================
 
 pub async fn query_insights(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Query(query): Query<InsightsQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let conn = state.db().connection()
+    use insights::domain::InsightsQuery as DomainInsightsQuery;
+
+    let params = DomainInsightsQuery {
+        execution_arn: query.execution_arn.clone(),
+        stage_id: query.stage_id.clone(),
+        insight_type: query.insight_type.clone(),
+        from: query.from.clone(),
+        to: query.to.clone(),
+    };
+
+    let insights = state.insights_store().query(&params)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
 
-    let mut sql = String::from(
-        "SELECT id, execution_id, stage_id, insight_type, data_json, created_at FROM insights WHERE 1=1"
-    );
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let insights_json: Vec<_> = insights.iter().map(|i| {
+        serde_json::json!({
+            "id": i.id,
+            "execution_id": i.execution_id,
+            "stage_id": i.stage_id,
+            "insight_type": i.insight_type.as_str(),
+            "data": i.data,
+            "created_at": i.created_at.to_rfc3339(),
+        })
+    }).collect();
 
-    if let Some(ref exec_arn) = query.execution_arn {
-        sql.push_str(" AND execution_id = ?");
-        params.push(Box::new(exec_arn.clone()));
-    }
-    if let Some(ref stage_id) = query.stage_id {
-        sql.push_str(" AND stage_id = ?");
-        params.push(Box::new(stage_id.clone()));
-    }
-    if let Some(ref insight_type) = query.insight_type {
-        sql.push_str(" AND insight_type = ?");
-        params.push(Box::new(insight_type.clone()));
-    }
-
-    sql.push_str(" ORDER BY created_at DESC LIMIT 100");
-
-    let mut stmt = conn.prepare(&sql)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
-
-    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    let rows = stmt.query_map(param_refs.as_slice(), |row| {
-        Ok(serde_json::json!({
-            "id": row.get::<_, i64>(0)?,
-            "execution_id": row.get::<_, String>(1)?,
-            "stage_id": row.get::<_, Option<String>>(2)?,
-            "insight_type": row.get::<_, String>(3)?,
-            "data": row.get::<_, String>(4)?,
-            "created_at": row.get::<_, String>(5)?,
-        }))
-    }).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
-
-    let insights: Vec<_> = rows.filter_map(|r| r.ok()).collect();
-    Ok(Json(serde_json::json!({ "insights": insights })))
+    Ok(Json(serde_json::json!({ "insights": insights_json })))
 }
 
 // ============================================================================
@@ -578,88 +551,97 @@ pub async fn query_insights(
 // ============================================================================
 
 pub async fn list_alerts(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Query(query): Query<AlertListQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let conn = state.db().connection()
+    use metrics::domain::{AlertQuery as DomainAlertQuery, AlertState as DomainAlertState, AlertSeverity as DomainAlertSeverity};
+
+    let domain_query = DomainAlertQuery {
+        state: query.state.as_ref().and_then(|s| DomainAlertState::from_str(s)),
+        severity: query.severity.as_ref().and_then(|s| DomainAlertSeverity::from_str(s)),
+        workspace_id: None,
+        limit: query.limit.map(|l| l as usize),
+    };
+
+    let alerts = state.alert_store().list(&domain_query)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
 
-    let limit = query.limit.unwrap_or(100);
-    let mut sql = String::from(
-        "SELECT id, message, severity, state, source, workspace_id, created_at, updated_at FROM alerts WHERE 1=1"
-    );
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let alerts_json: Vec<_> = alerts.iter().map(|a| {
+        serde_json::json!({
+            "id": a.id,
+            "message": a.message,
+            "severity": a.severity.as_str(),
+            "state": a.state.as_str(),
+            "source": a.source,
+            "workspace_id": a.workspace_id,
+            "created_at": a.created_at.to_rfc3339(),
+            "updated_at": a.updated_at.to_rfc3339(),
+        })
+    }).collect();
 
-    if let Some(ref state) = query.state {
-        sql.push_str(" AND state = ?");
-        params.push(Box::new(state.clone()));
-    }
-    if let Some(ref severity) = query.severity {
-        sql.push_str(" AND severity = ?");
-        params.push(Box::new(severity.clone()));
-    }
-
-    sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {}", limit));
-
-    let mut stmt = conn.prepare(&sql)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
-
-    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    let rows = stmt.query_map(param_refs.as_slice(), |row| {
-        Ok(serde_json::json!({
-            "id": row.get::<_, i64>(0)?,
-            "message": row.get::<_, String>(1)?,
-            "severity": row.get::<_, String>(2)?,
-            "state": row.get::<_, String>(3)?,
-            "source": row.get::<_, Option<String>>(4)?,
-            "workspace_id": row.get::<_, Option<String>>(5)?,
-            "created_at": row.get::<_, String>(6)?,
-            "updated_at": row.get::<_, Option<String>>(7)?,
-        }))
-    }).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
-
-    let alerts: Vec<_> = rows.filter_map(|r| r.ok()).collect();
-    Ok(Json(serde_json::json!({ "alerts": alerts })))
+    Ok(Json(serde_json::json!({ "alerts": alerts_json })))
 }
 
 pub async fn create_alert(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CreateAlertRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
-    let conn = state.db().connection()
+    use metrics::domain::Alert;
+
+    let severity = metrics::domain::AlertSeverity::from_str(&req.severity)
+        .unwrap_or(metrics::domain::AlertSeverity::Info);
+
+    let alert = Alert::new(
+        req.message.clone(),
+        severity,
+        req.source.clone(),
+        req.workspace_id.clone(),
+    );
+
+    let id = state.alert_store().create(&alert)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
 
-    let now = chrono::Utc::now().to_rfc3339();
-    conn.execute(
-        "INSERT INTO alerts (message, severity, state, source, workspace_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![req.message, req.severity, "open", req.source, req.workspace_id, now, now],
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
-
-    let id = conn.last_insert_rowid();
     Ok((StatusCode::CREATED, Json(serde_json::json!({
         "id": id,
         "message": req.message,
         "severity": req.severity,
         "state": "open",
-        "created_at": now,
+        "created_at": alert.created_at.to_rfc3339(),
     }))))
 }
 
 pub async fn update_alert(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
     Json(req): Json<UpdateAlertRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let conn = state.db().connection()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
+    use metrics::domain::AlertState;
 
-    if let Some(state) = req.state {
-        let now = chrono::Utc::now().to_rfc3339();
-        conn.execute(
-            "UPDATE alerts SET state = ?1, updated_at = ?2 WHERE id = ?3",
-            rusqlite::params![state, now, id],
-        ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
+    // First get the existing alert
+    let mut alert = state.alert_store().get(id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse::new("RESOURCE_NOT_FOUND", &format!("Alert {} not found", id))),
+            )
+        })?;
+
+    // Update state if provided
+    if let Some(state_str) = req.state {
+        let new_state = AlertState::from_str(&state_str)
+            .ok_or_else(|| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse::new("INVALID_STATE", &format!("Invalid alert state: {}", state_str))),
+                )
+            })?;
+        alert.state = new_state;
+        alert.updated_at = chrono::Utc::now();
     }
+
+    state.alert_store().update(&alert)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
 
     Ok(Json(serde_json::json!({ "id": id })))
 }
@@ -669,7 +651,7 @@ pub async fn update_alert(
 // ============================================================================
 
 pub async fn get_metrics(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Query(query): Query<MetricsQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
     let exec_arn = match query.execution_arn {
@@ -681,7 +663,7 @@ pub async fn get_metrics(
         }))),
     };
 
-    let execution = state.app_state.execution_store.get(&exec_arn)
+    let execution = state.execution_store().get(&exec_arn)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string()))))?;
 
     let mut metrics = Vec::new();
@@ -745,38 +727,38 @@ pub async fn update_config(
 // ============================================================================
 
 pub async fn list_templates(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    template::list(std::sync::Arc::new(state)).await
+    template::list(state).await
 }
 
 pub async fn create_template(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CreateTemplateRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
-    template::create(std::sync::Arc::new(state), req).await
+    template::create(state, req).await
 }
 
 pub async fn get_template(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    template::get(std::sync::Arc::new(state), &arn).await
+    template::get(state, &arn).await
 }
 
 pub async fn update_template(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
     Json(req): Json<UpdateTemplateRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    template::update(std::sync::Arc::new(state), &arn, req).await
+    template::update(state, &arn, req).await
 }
 
 pub async fn delete_template(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    template::delete(std::sync::Arc::new(state), &arn).await
+    template::delete(state, &arn).await
 }
 
 // ============================================================================
@@ -784,38 +766,38 @@ pub async fn delete_template(
 // ============================================================================
 
 pub async fn list_tools(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    tool::list(std::sync::Arc::new(state)).await
+    tool::list(state).await
 }
 
 pub async fn create_tool(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CreateToolRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
-    tool::create(std::sync::Arc::new(state), req).await
+    tool::create(state, req).await
 }
 
 pub async fn get_tool(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    tool::get(std::sync::Arc::new(state), &arn).await
+    tool::get(state, &arn).await
 }
 
 pub async fn update_tool(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
     Json(req): Json<UpdateToolRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    tool::update(std::sync::Arc::new(state), &arn, req).await
+    tool::update(state, &arn, req).await
 }
 
 pub async fn delete_tool(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    tool::delete(std::sync::Arc::new(state), &arn).await
+    tool::delete(state, &arn).await
 }
 
 #[cfg(test)]
@@ -1062,13 +1044,13 @@ pub async fn get_schema(
 
 /// GET /content/:arn - Returns raw file content for a resource
 pub async fn get_content(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
     let arn = validate_arn(&arn)?;
 
     // Look up the node to get the file path
-    let node = state.get_node(&arn)
+    let node = state.get_node_by_arn(&arn)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e))))?
         .ok_or_else(|| {
             (
@@ -1078,7 +1060,7 @@ pub async fn get_content(
         })?;
 
     // Try to read the content from the file
-    let content_path = state.app_state.get_content_path(&arn);
+    let content_path = state.get_content_path(&arn);
     let content = if let Some(path) = content_path {
         std::fs::read_to_string(&path).unwrap_or_default()
     } else {
@@ -1101,14 +1083,14 @@ pub async fn get_content(
 
 /// PUT /content/:arn - Updates raw file content for a resource
 pub async fn put_content(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
     Json(req): Json<UpdateContentRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
     let arn = validate_arn(&arn)?;
 
     // Verify the resource exists
-    let _node = state.get_node(&arn)
+    let _node = state.get_node_by_arn(&arn)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e))))?
         .ok_or_else(|| {
             (
@@ -1119,7 +1101,7 @@ pub async fn put_content(
 
     // Run full validation before writing
     let resource_type = parse_resource_type_from_arn(&arn)?;
-    let registry_view = RegistryViewAdapter { state: state.app_state.clone() };
+    let registry_view = RegistryViewAdapter { state: state.clone() };
     let validation_result = validation::validate_resource(&arn, resource_type, &req.content, &registry_view);
 
     if !validation_result.is_valid() {
@@ -1138,7 +1120,7 @@ pub async fn put_content(
     }
 
     // Try to write the content to the file
-    let content_path = state.app_state.get_content_path(&arn);
+    let content_path = state.get_content_path(&arn);
     if let Some(path) = content_path {
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
@@ -1165,7 +1147,7 @@ pub async fn put_content(
 
 /// POST /validate/:arn - Validates resource content and returns diagnostics
 pub async fn validate_resource(
-    State(state): State<RestState>,
+    State(state): State<Arc<AppState>>,
     Path(arn): Path<String>,
     Json(req): Json<ValidateResourceRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
@@ -1175,7 +1157,7 @@ pub async fn validate_resource(
     let resource_type = parse_resource_type_from_arn(&arn)?;
 
     // Create a registry view adapter
-    let registry_view = RegistryViewAdapter { state: state.app_state.clone() };
+    let registry_view = RegistryViewAdapter { state: state.clone() };
 
     // Validate the content
     let result = validation::validate_resource(&arn, resource_type, &req.content, &registry_view);
@@ -1199,15 +1181,15 @@ struct RegistryViewAdapter {
 
 impl validation::RegistryView for RegistryViewAdapter {
     fn node_exists(&self, arn: &str) -> bool {
-        self.state.node_service.get(arn).ok().flatten().is_some()
+        self.state.node_service().get(arn).ok().flatten().is_some()
     }
 
     fn get_node_name(&self, arn: &str) -> Option<String> {
-        self.state.node_service.get(arn).ok().flatten().map(|n| n.name)
+        self.state.node_service().get(arn).ok().flatten().map(|n| n.name)
     }
 
     fn get_node_type(&self, arn: &str) -> Option<validation::ResourceType> {
-        let node = self.state.node_service.get(arn).ok().flatten()?;
+        let node = self.state.node_service().get(arn).ok().flatten()?;
         match node.node_type.as_str() {
             "workflow" => Some(validation::ResourceType::Workflow),
             "agent" => Some(validation::ResourceType::Agent),

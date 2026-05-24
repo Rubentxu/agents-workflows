@@ -46,9 +46,6 @@ pub use arn::ArnResolver;
 pub use diagnostic::{Diagnostic, Location, Severity, ValidationResult};
 pub use registry::RegistryView;
 
-static ARN_REFERENCE_REGEX: once_cell::sync::Lazy<Regex> =
-    once_cell::sync::Lazy::new(|| Regex::new(r"arn:local:[^:]+:[^/]+/[^:]+").unwrap());
-
 // ============================================================================
 // Resource Type
 // ============================================================================
@@ -214,7 +211,7 @@ pub fn validate_resource(
 
 /// Validate semantic rules specific to each resource type
 fn validate_semantic(
-    content: &str,
+    _content: &str,
     resource_type: ResourceType,
     parsed: &Option<serde_yaml::Value>,
 ) -> ValidationResult {

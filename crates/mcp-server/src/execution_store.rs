@@ -3,13 +3,15 @@
 //! Owns persistence for execution records so MCP handlers do not need to issue
 //! raw SQL directly for create/read/update/list/abort flows.
 
-use crate::types::{ExecutionListParams, ExecutionSummary, StageOutput, TriggerInfo};
+#[allow(deprecated)]
+use crate::types::{ExecutionListParams, ExecutionSummary, StageOutput, TriggerInfoDto};
 use registry::infrastructure::db::Database;
 use rusqlite::{params_from_iter, ToSql};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
+#[allow(deprecated)]
 pub struct PersistedExecution {
     pub arn: String,
     pub workflow_arn: String,
@@ -19,12 +21,13 @@ pub struct PersistedExecution {
     pub completed_stages: Vec<String>,
     pub stage_outputs: HashMap<String, StageOutput>,
     pub execution_context: serde_json::Value,
-    pub triggered_by: TriggerInfo,
+    pub triggered_by: TriggerInfoDto,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
 }
 
 #[derive(Debug, Clone)]
+#[allow(deprecated)]
 pub struct ExecutionUpdate {
     pub execution_arn: String,
     pub status: String,
@@ -286,8 +289,9 @@ mod tests {
             completed_stages: vec![],
             stage_outputs: HashMap::new(),
             execution_context: serde_json::json!({"goal": "test"}),
-            triggered_by: TriggerInfo {
+            triggered_by: TriggerInfoDto {
                 trigger_type: "manual".to_string(),
+                source: None,
                 input: serde_json::json!({"goal": "test"}),
             },
             started_at: Some("2026-05-18T10:00:00Z".to_string()),

@@ -9,6 +9,7 @@
 //! implementing the port, while reusing the existing ExecutionStore.
 
 use crate::execution_store::{ExecutionStore, ExecutionUpdate, PersistedExecution};
+#[allow(deprecated)]
 use crate::types::{ExecutionListParams, TriggerInfo as McpTriggerInfo, StageOutput as McpStageOutput};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -103,6 +104,7 @@ impl ExecutionRepositoryAdapter {
     }
 
     /// Convert domain ExecutionState to PersistedExecution (mcp-server type)
+    #[allow(deprecated)]
     fn from_domain(&self, state: &ExecutionState) -> PersistedExecution {
         let stage_outputs: HashMap<String, McpStageOutput> = state
             .stage_outputs
@@ -131,6 +133,7 @@ impl ExecutionRepositoryAdapter {
             execution_context: state.execution_context.clone(),
             triggered_by: McpTriggerInfo {
                 trigger_type: state.triggered_by.trigger_type.clone(),
+                source: None,
                 input: state.triggered_by.input.clone(),
             },
             started_at: state.started_at.map(|dt| dt.to_rfc3339()),
@@ -156,6 +159,7 @@ impl ExecutionRepository for ExecutionRepositoryAdapter {
         }
     }
 
+    #[allow(deprecated)]
     fn update(&self, execution: &ExecutionState) -> Result<(), StateMachineError> {
         let stage_outputs: HashMap<String, McpStageOutput> = execution
             .stage_outputs

@@ -3,7 +3,7 @@
 //! Validates that ARN references in content actually exist in the registry.
 //! This catches broken references before runtime.
 
-use super::{Diagnostic, Location, RegistryView, ResourceType, ValidationResult};
+use super::{Diagnostic, RegistryView, ResourceType, ValidationResult};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_yaml::Value as YamlValue;
@@ -56,7 +56,7 @@ fn collect_arn_references_inner(value: &YamlValue, refs: &mut Vec<String>) {
         YamlValue::Number(_) => {}
         YamlValue::String(s) => {
             // Check if the string contains an ARN
-            for cap in ARN_PATTERN.captures(s) {
+            if let Some(cap) = ARN_PATTERN.captures(s) {
                 if let Some(arn) = cap.get(0) {
                     refs.push(arn.as_str().to_string());
                 }

@@ -32,6 +32,7 @@ use axum::Router;
 use tower_http::cors::{CorsLayer, Any};
 
 mod state;
+mod context;
 mod metrics_sse;
 mod handler;
 mod workflow_handler;
@@ -49,6 +50,9 @@ mod studio;
 mod bootstrap;
 mod auth;
 mod resources;
+mod workspace_store;
+mod insights_store;
+mod alert_store;
 
 use state::AppState;
 use metrics_sse::MetricsBroadcaster;
@@ -58,7 +62,7 @@ use artifact_handler::ArtifactMcpHandler;
 use insights_handler::InsightsMcpHandler;
 use metrics_handler::MetricsMcpHandler;
 use types::*;
-use rest::{create_rest_router, RestState};
+use rest::create_rest_router;
 use bootstrap::BootstrapService;
 
 #[derive(Parser)]
@@ -587,7 +591,7 @@ async fn start_server(workspace: String, port: u16) -> Result<(), Box<dyn std::e
     info!("Application state initialized");
 
     // Register all resources (workflows, agents, tools, skills, prompts) from YAML/files into database
-    bootstrap.register_resources_to_db(state.node_service.clone())?;
+    bootstrap.register_resources_to_db(state.node_service().clone())?;
     info!("Resources registered from YAML files");
 
     // Initialize metrics broadcaster
@@ -608,8 +612,7 @@ async fn start_server(workspace: String, port: u16) -> Result<(), Box<dyn std::e
     let metrics_routes = metrics_sse::metrics_routes(broadcaster_for_routes);
 
     // Initialize REST API state — wraps AppState via Arc
-    let rest_state = RestState::new(state_for_rest);
-    let rest_app = create_rest_router(rest_state);
+    let rest_app = create_rest_router(state_for_rest);
 
     // Start REST API server on configurable port (default 8081)
     let rest_port: u16 = std::env::var("REST_PORT")

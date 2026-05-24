@@ -3,7 +3,7 @@
 //! Abstracts access to the registry for validation purposes.
 //! Implementations can query the actual registry or use mock data for testing.
 
-use super::{Diagnostic, Location, ResourceType, Severity, ValidationResult};
+use super::ResourceType;
 
 /// Trait for accessing registry data during validation.
 ///

@@ -2,7 +2,10 @@
 //!
 //! Validates YAML content for parse errors and basic structure issues.
 
+#[cfg(test)]
 use super::{Diagnostic, Location, RegistryView, ResourceType, ValidationResult};
+#[cfg(not(test))]
+use super::{Diagnostic, Location, ResourceType, ValidationResult};
 use serde_yaml::Value as YamlValue;
 
 /// Validate YAML syntax and basic structure
@@ -110,7 +113,7 @@ fn validate_yaml_structure(
                         "EMPTY_FRONTMATTER".to_string(),
                     ));
                 }
-            } else if let YamlValue::Sequence(seq) = value {
+            } else if let YamlValue::Sequence(_seq) = value {
                 // If the whole file is a sequence, it might be missing frontmatter
                 result.add_diagnostic(Diagnostic::info(
                     "Content appears to be a YAML list without frontmatter header".to_string(),

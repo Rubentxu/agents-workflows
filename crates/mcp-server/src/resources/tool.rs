@@ -6,7 +6,7 @@ use std::sync::Arc;
 use axum::{http::StatusCode, Json};
 use registry::domain::Node;
 
-use crate::rest::RestState;
+use crate::state::AppState;
 use crate::rest_types::{CreateToolRequest, UpdateToolRequest};
 use crate::resources::{
     CrudError, not_found, internal_error, list_response, node_to_response, validate_arn,
@@ -85,8 +85,8 @@ pub fn apply_tool_update(
 // ============================================================================
 
 /// List all tools
-pub async fn list(state: Arc<RestState>) -> Result<Json<serde_json::Value>, CrudError> {
-    let nodes = state.list_by_type("tool").map_err(internal_error)?;
+pub async fn list(state: Arc<AppState>) -> Result<Json<serde_json::Value>, CrudError> {
+    let nodes = state.list_by_type_str("tool").map_err(internal_error)?;
     let items: Vec<_> = nodes.iter().map(|n| {
         serde_json::json!({
             "id": n.id,
@@ -100,9 +100,9 @@ pub async fn list(state: Arc<RestState>) -> Result<Json<serde_json::Value>, Crud
 }
 
 /// Get a tool by ARN
-pub async fn get(state: Arc<RestState>, arn: &str) -> Result<Json<serde_json::Value>, CrudError> {
+pub async fn get(state: Arc<AppState>, arn: &str) -> Result<Json<serde_json::Value>, CrudError> {
     let arn = validate_arn(arn)?;
-    match state.get_node(&arn).map_err(internal_error)? {
+    match state.get_node_by_arn(&arn).map_err(internal_error)? {
         Some(node) => Ok(Json(node_to_response(&node))),
         None => Err(not_found("Tool", &arn)),
     }
@@ -110,7 +110,7 @@ pub async fn get(state: Arc<RestState>, arn: &str) -> Result<Json<serde_json::Va
 
 /// Create a tool
 pub async fn create(
-    state: Arc<RestState>,
+    state: Arc<AppState>,
     req: CreateToolRequest,
 ) -> Result<(StatusCode, Json<serde_json::Value>), CrudError> {
     let arn = build_arn(&req.scope, &req.name);
@@ -140,12 +140,12 @@ pub async fn create(
 
 /// Update a tool
 pub async fn update(
-    state: Arc<RestState>,
+    state: Arc<AppState>,
     arn: &str,
     req: UpdateToolRequest,
 ) -> Result<Json<serde_json::Value>, CrudError> {
     let arn = validate_arn(arn)?;
-    let existing = state.get_node(&arn).map_err(internal_error)?.ok_or_else(|| not_found("Tool", &arn))?;
+    let existing = state.get_node_by_arn(&arn).map_err(internal_error)?.ok_or_else(|| not_found("Tool", &arn))?;
 
     let mut config: serde_yaml::Value = existing
         .config_json
@@ -174,9 +174,9 @@ pub async fn update(
 }
 
 /// Delete a tool
-pub async fn delete(state: Arc<RestState>, arn: &str) -> Result<StatusCode, CrudError> {
+pub async fn delete(state: Arc<AppState>, arn: &str) -> Result<StatusCode, CrudError> {
     let arn = validate_arn(arn)?;
-    let deleted = state.delete_node(&arn).map_err(internal_error)?;
+    let deleted = state.delete_node_by_arn(&arn).map_err(internal_error)?;
     if deleted {
         Ok(StatusCode::NO_CONTENT)
     } else {

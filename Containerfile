@@ -15,6 +15,8 @@ FROM docker.io/library/rust:1.88-slim-bookworm AS builder
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    nodejs \
+    npm \
     pkg-config \
     libsqlite3-dev \
     libssl-dev \
@@ -25,8 +27,11 @@ WORKDIR /build
 # Copy source code
 COPY . .
 
-# Build the binary (without embedded-studio, we copy studio files directly)
-RUN cargo build --release -p mcp-server
+# Build Studio assets for embedding
+RUN cd studio && npm install && npm run build
+
+# Build the binary with embedded Studio assets
+RUN cargo build --release -p mcp-server --features embedded-studio
 
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime
@@ -53,10 +58,7 @@ COPY --from=builder /build/target/release/workflow-mcp /usr/local/bin/
 # Copy default workflow templates
 COPY --from=builder /build/crates/mcp-server/templates /home/appuser/.workflows/templates
 
-# Copy studio UI files
-COPY --from=builder /build/studio/dist /home/appuser/.workflows/studio
-
-# Fix ownership for all workflow data (templates and studio)
+# Fix ownership for workflow data
 RUN chown -R appuser:appuser /home/appuser/.workflows
 
 # Environment defaults

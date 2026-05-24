@@ -49,7 +49,6 @@ podman run -d \
     -p 8081:8081 \
     -v ${WORKSPACE_VOLUME}:/home/appuser/.workflows \
     -e WORKSPACE=/home/appuser/.workflows \
-    -e STUDIO_PATH=/home/appuser/.workflows/studio \
     -e RUST_LOG=info \
     ${IMAGE_NAME}
 

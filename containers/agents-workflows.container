@@ -32,7 +32,6 @@ Volume=agents-workflows-data:/home/appuser/.workflows:rw
 
 # Environment
 Environment=WORKSPACE=/home/appuser/.workflows
-Environment=STUDIO_PATH=/home/appuser/.workflows/studio
 Environment=RUST_LOG=info
 Environment=PORT=8080
 

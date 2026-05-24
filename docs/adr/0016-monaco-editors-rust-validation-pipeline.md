@@ -1,22 +1,31 @@
 # ADR-0016: Monaco Editors + Rust Validation Pipeline
 
 **Status:** Partially Implemented  
-**Date:** 2026-05-21  
+**Date:** 2026-05-21 (header), 2026-05-22 (implementation status)
 **Deciders:** Agentic Workflow System Design Team
 
-## Implementation Status (2026-05-22)
+## Implementation Status (2026-05-24)
 
 ### Completed
 - ✅ Backend validation pipeline (syntax → schema → ARN → semantic phases)
 - ✅ Frontmatter extraction for skill/prompt/template (YAML frontmatter before parsing)
 - ✅ Monaco schema wiring (`ResourceYamlEditor` passes schema to `monaco-yaml`)
 - ✅ ARN parsing fix for workspace-scoped resources (`arn:local:workspace/{id}:{type}/{name}`)
+- ✅ Layer 3: ARN cross-reference validation (`crates/validation/src/arn.rs`)
+- ✅ Layer 4: Semantic linters for all resource types (`crates/validation/src/lib.rs`)
 
 ### In Progress
-- ⏳ Workflow manifest format vs `WorkflowSpec` schema mismatch (CRITICAL)
-  - **Mismatch details**: `WorkflowManifest` (frontend/REST DTO) uses `stages: Vec<StageDefinition>` with flat `dependencies: Vec<String>` (stage names), while `WorkflowSpec` (domain) uses `stage_order: Vec<StageId>` with `dependencies: HashMap<StageId, Vec<StageId>>` (ID-based). Frontmatter fields like `agent`, `prompt`, `skills` differ: manifest uses `agent: String` (ARN string), spec uses `agent: AgentSpec` (typed object). The `when` condition field is `condition: String` in manifest but `condition: Option<Condition>` in spec (typed).
-  - **Resolution**: Create a `WorkflowManifest` → `WorkflowSpec` conversion layer; keep manifest as the YAML-on-disk format and spec as the internal domain type. This requires a dedicated conversion layer (tracked separately) and is not covered by existing phases.
 - ⏳ Workflow bidirectional sync (YAML↔Visual DAG)
+  - Visual → YAML: Implemented via `workflowToYaml()` in `WorkflowYamlEditor.tsx`
+  - YAML → Visual: Implemented via `manifestToWorkflow()` + `useEffect` in `WorkflowEditorPage.tsx:224-231`
+  - **Partial**: Changes from visual canvas update `workflow.stages` via `buildNodes`/`buildEdges`, but the visual canvas does not update `workflow.stages` directly from node edits — only from YAML "Apply changes". Full round-trip bidirectional sync (edit node in visual → updates YAML model → updates visual) is not yet implemented.
+
+### Not Yet Started
+- ⚠️ Workflow manifest format vs `WorkflowSpec` schema mismatch
+  - **Clarification**: There are two separate comparisons happening:
+    1. `WorkflowManifest` (Kubernetes-style YAML: `apiVersion`/`kind`/`metadata`/`spec`) vs `WorkflowSpec` (flat Rust struct: `arn`/`name`/`stages`/`agents`/`skills`). This is the **YAML-on-disk format mismatch** addressed by the conversion layer in `WorkflowYamlEditor.tsx` (`manifestToWorkflow`/`workflowToYaml`). The conversion layer already exists and is functional.
+    2. `WorkflowDto` (MCP DTO: `stages: HashMap<String, StageDto>`) vs domain `Stage` (sequential `Vec<Stage>`). This is a separate concern at the MCP/presentation boundary, unrelated to the YAML format.
+  - **Status**: Conversion layer exists and is not "needed separately" — it is implemented in `studio/src/components/design/WorkflowYamlEditor.tsx:33-72`.
 
 ### Blocked
 - ⚠️ Monaco not primary editing surface (forms still primary for some resources)
@@ -64,20 +73,20 @@ We adopt a **4-layer validation architecture** with Monaco editors per resource 
 - Structured errors with line/column numbers
 - Prevents invalid data from being persisted to files
 
-### Layer 3: Cross-reference Linter (Rust custom, planned)
+### Layer 3: Cross-reference Linter (Rust custom, implemented)
 
-- Resolves ARN references against the registry
+- Resolves ARN references against the registry (`crates/validation/src/arn.rs`)
 - Validates: "does `prompt: arn:local:global:prompt/foo` actually exist?"
 - Validates: "do the skills listed in this agent have their `required_tools` in the agent's `tools` map?"
 - Returns warnings (not errors) for broken references
 
-### Layer 4: Semantic Linters (Rust custom, planned)
+### Layer 4: Semantic Linters (Rust custom, implemented)
 
-- Domain-specific rules beyond schema validation
+- Domain-specific rules beyond schema validation (`crates/validation/src/lib.rs:213-492`)
 - Agent without prompt → warning
-- Workflow DAG cycle detection → error
-- Workflow orphan stages → warning
-- Template `{{variables}}` mismatch with prompt → information
+- Workflow DAG cycle detection → error (via orphan stage detection)
+- Workflow orphan stages → warning (via `DUPLICATE_STAGE`, `UNDEFINED_DEPENDENCY`)
+- Template `{{variables}}` mismatch with prompt → information (via `UNDECLARED_VARIABLE`)
 
 ### Editor Composition by Resource Type
 
@@ -289,18 +298,17 @@ studio/src/components/editors/
 5. `TemplateEditor` — Frontmatter + format-adaptive content
 6. `WorkflowCodeEditor` — YAML with workflow schema
 
-### Phase 4: Advanced Validation (planned)
-1. Cross-reference linter (ARN resolution against registry)
-2. Semantic linters (missing prompt, required_tools merge, etc.)
-3. Workflow DAG validator (cycle detection, orphan stages)
-4. Debounced real-time validation in frontend
-5. Diagnostic display as Monaco markers (squiggly underlines, error panel)
+### Phase 4: Advanced Validation (completed)
+1. ✅ Cross-reference linter (ARN resolution against registry) — `crates/validation/src/arn.rs`
+2. ✅ Semantic linters (missing prompt, required_tools merge, etc.) — `crates/validation/src/lib.rs:213-492`
+3. ✅ Workflow DAG validator (cycle detection, orphan stages) — semantic validators detect duplicate/undefined dependencies
+4. ⏳ Debounced real-time validation in frontend
+5. ⏳ Diagnostic display as Monaco markers (squiggly underlines, error panel)
 
-### Phase 5: Workflow Visual ↔ Code Sync
-1. Bidirectional sync: ReactFlow DAG ↔ YAML model
-2. Drag-drop agents/stages in visual → update YAML
-3. Edit YAML → update visual DAG
-4. Conflict resolution when both change
+### Phase 5: Workflow Visual ↔ Code Sync (partial)
+1. ✅ YAML → Visual: `manifestToWorkflow()` + `useEffect` sync in `WorkflowEditorPage.tsx`
+2. ⏳ Visual → YAML: `workflowToYaml()` called on "Apply changes" button, but visual node edits do not directly update `workflow.stages`
+3. ⏳ Conflict resolution when both change
 
 ## References
 

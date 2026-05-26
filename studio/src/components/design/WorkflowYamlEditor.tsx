@@ -18,7 +18,7 @@ import yaml from 'js-yaml';
 import type * as Monaco from 'monaco-editor';
 import type { Workflow } from '@/types/workflow';
 import type { WorkflowManifest } from '@/types/manifest.workflow';
-import { API_VERSION } from '@/types/manifest';
+import { workflowToYaml, manifestToWorkflow } from '@/lib/workflowToYaml';
 import { YamlMonacoEditor } from '@/components/monaco';
 import type { Diagnostic } from '@/components/monaco/YamlMonacoEditor';
 
@@ -40,47 +40,6 @@ interface WorkflowYamlEditorProps {
   editorRef?: React.RefObject<Monaco.editor.IStandaloneCodeEditor | null>;
   /** Render as read-only when used as a serialization panel */
   readOnly?: boolean;
-}
-
-export function workflowToYaml(workflow: Workflow | null): string {
-  if (!workflow) return '';
-  const manifest: WorkflowManifest = {
-    apiVersion: API_VERSION,
-    kind: 'Workflow',
-    metadata: {
-      uid: '',
-      name: workflow.name,
-      scope: 'global',
-      labels: {},
-      annotations: {},
-    },
-    spec: {
-      description: workflow.description,
-      stages: workflow.stages,
-      agents: workflow.agents,
-      skills: workflow.skills,
-      execution: workflow.execution as unknown as { mode: string; stop_on_error: boolean },
-      metrics: workflow.metrics as { streaming: boolean; interval_ms: number; channels: string[] },
-    },
-  };
-  return yaml.dump(manifest, { indent: 2, lineWidth: -1, noRefs: true });
-}
-
-export function manifestToWorkflow(manifest: WorkflowManifest): Workflow {
-  return {
-    arn: `arn:local:${manifest.metadata.scope}:workflow/${manifest.metadata.name}`,
-    name: manifest.metadata.name,
-    version: '1.0',
-    description: manifest.spec.description ?? '',
-    agents: manifest.spec.agents ?? {},
-    skills: manifest.spec.skills ?? {},
-    stages: manifest.spec.stages ?? [],
-    execution: {
-      mode: (manifest.spec.execution?.mode as Workflow['execution']['mode']) ?? 'sequential',
-      stop_on_error: manifest.spec.execution?.stop_on_error ?? true,
-    },
-    metrics: manifest.spec.metrics ?? { streaming: false, interval_ms: 5000, channels: [] },
-  };
 }
 
 export function WorkflowYamlEditor({
@@ -151,6 +110,64 @@ export function WorkflowYamlEditor({
     }
   }, []);
 
+  // Stable ready promise for tests — resolved when Monaco editor model is available.
+  const modelReadyRef = useRef<Promise<void>>(Promise.resolve());
+  const resolveModelReadyRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    // Create a new promise each time (in case of remount scenarios).
+    modelReadyRef.current = new Promise<void>(resolve => { resolveModelReadyRef.current = resolve; });
+
+    // If Monaco already mounted before this useEffect ran (onMount fires before useEffect),
+    // resolve immediately so tests don't hang.
+    if (editorRef?.current) {
+      resolveModelReadyRef.current?.();
+    }
+
+    const editorKey = workflow?.arn;
+    if (!editorKey) return;
+
+    const globalWindow = window as typeof window & {
+      __AW_MONACO_TEST__?: {
+        workflowEditors?: Record<string, {
+          setValue: (next: string) => void;
+          getValue: () => string;
+          getError: () => string | null;
+          /** Resolves when Monaco editor model is ready. */
+          ready: Promise<void>;
+        }>;
+      };
+    };
+
+    globalWindow.__AW_MONACO_TEST__ ??= {};
+    globalWindow.__AW_MONACO_TEST__.workflowEditors ??= {};
+    globalWindow.__AW_MONACO_TEST__.workflowEditors[editorKey] = {
+      setValue: (next: string) => {
+        handleYamlChange(next);
+        // Also update Monaco's model directly so save() reads correct content.
+        // handleYamlChange only updates React state/yamlContentRef;
+        // Monaco's model isn't synced until the re-render propagates.
+        // Try editorRef first, then fall back to window.monaco.
+        let model = editorRef?.current?.getModel();
+        if (!model) {
+          const editors = (window as any).monaco?.editor?.getEditors?.();
+          model = editors?.[0]?.getModel?.();
+        }
+        model?.setValue(next);
+      },
+      getValue: () => yamlContentRef.current,
+      getError: () => parseError,
+      ready: modelReadyRef.current,
+    };
+
+    return () => {
+      delete globalWindow.__AW_MONACO_TEST__?.workflowEditors?.[editorKey];
+    };
+    // Use workflow as dependency (not workflow?.arn) to ensure re-registration
+    // when workflow transitions from null → populated. The early return above
+    // handles the case where workflow?.arn is not yet available.
+  }, [handleYamlChange, parseError, workflow]);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2 border-b border-outline-variant bg-surface-container/30">
@@ -176,6 +193,7 @@ export function WorkflowYamlEditor({
           height="100%"
           editorRef={editorRef}
           readOnly={readOnly}
+          onReady={() => resolveModelReadyRef.current?.()}
         />
       </div>
     </div>

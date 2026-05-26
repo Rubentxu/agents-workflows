@@ -32,6 +32,12 @@ export function WorkflowInspector({ node, workflow, onUpdate, onClose }: Workflo
   const [localData, setLocalData] = useState<StageNodeData>({
     ...node.data,
     ...stageData,
+    retry: stageData?.execution?.retry
+      ? {
+          maxAttempts: stageData.execution.retry.max_attempts,
+          backoffMs: stageData.execution.retry.backoff_ms,
+        }
+      : undefined,
   });
 
   const handleChange = useCallback((field: keyof StageNodeData, value: unknown) => {
@@ -60,8 +66,9 @@ export function WorkflowInspector({ node, workflow, onUpdate, onClose }: Workflo
       <div className="flex-1 overflow-auto p-4 space-y-4">
         {/* Stage ID (readonly) */}
         <div>
-          <label className="block text-xs font-medium text-secondary mb-1">Stage ID</label>
+          <label htmlFor="inspector-stage-id" className="block text-xs font-medium text-secondary mb-1">Stage ID</label>
           <input
+            id="inspector-stage-id"
             type="text"
             value={localData.id}
             readOnly
@@ -71,8 +78,9 @@ export function WorkflowInspector({ node, workflow, onUpdate, onClose }: Workflo
 
         {/* Label */}
         <div>
-          <label className="block text-xs font-medium text-secondary mb-1">Label</label>
+          <label htmlFor="inspector-label" className="block text-xs font-medium text-secondary mb-1">Label</label>
           <input
+            id="inspector-label"
             type="text"
             value={localData.label}
             onChange={(e) => handleChange('label', e.target.value)}
@@ -82,8 +90,9 @@ export function WorkflowInspector({ node, workflow, onUpdate, onClose }: Workflo
 
         {/* Description */}
         <div>
-          <label className="block text-xs font-medium text-secondary mb-1">Description</label>
+          <label htmlFor="inspector-description" className="block text-xs font-medium text-secondary mb-1">Description</label>
           <textarea
+            id="inspector-description"
             value={localData.description ?? ''}
             onChange={(e) => handleChange('description', e.target.value)}
             rows={2}
@@ -93,8 +102,9 @@ export function WorkflowInspector({ node, workflow, onUpdate, onClose }: Workflo
 
         {/* Agent */}
         <div>
-          <label className="block text-xs font-medium text-secondary mb-1">Agent ARN</label>
+          <label htmlFor="inspector-agent" className="block text-xs font-medium text-secondary mb-1">Agent ARN</label>
           <input
+            id="inspector-agent"
             type="text"
             value={localData.agent ?? stageData?.agent ?? ''}
             onChange={(e) => handleChange('agent', e.target.value)}
@@ -105,8 +115,9 @@ export function WorkflowInspector({ node, workflow, onUpdate, onClose }: Workflo
 
         {/* Execution mode */}
         <div>
-          <label className="block text-xs font-medium text-secondary mb-1">Execution Mode</label>
+          <label htmlFor="inspector-execution-mode" className="block text-xs font-medium text-secondary mb-1">Execution Mode</label>
           <select
+            id="inspector-execution-mode"
             value={localData.executionMode ?? stageData?.execution?.mode ?? 'sequential'}
             onChange={(e) => handleChange('executionMode', e.target.value)}
             className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-secondary outline-none focus:border-primary"
@@ -119,8 +130,9 @@ export function WorkflowInspector({ node, workflow, onUpdate, onClose }: Workflo
 
         {/* Dependencies */}
         <div>
-          <label className="block text-xs font-medium text-secondary mb-1">Depends On</label>
+          <label htmlFor="inspector-depends-on" className="block text-xs font-medium text-secondary mb-1">Depends On</label>
           <input
+            id="inspector-depends-on"
             type="text"
             value={(localData.dependsOn ?? stageData?.depends_on ?? []).join(', ')}
             onChange={(e) =>
@@ -141,20 +153,36 @@ export function WorkflowInspector({ node, workflow, onUpdate, onClose }: Workflo
             <label className="block text-xs font-medium text-secondary mb-1">Retry Config</label>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[10px] text-secondary mb-0.5">Max attempts</label>
+                <label htmlFor="inspector-retry-max-attempts" className="block text-[10px] text-secondary mb-0.5">Max attempts</label>
                 <input
+                  id="inspector-retry-max-attempts"
                   type="number"
                   min={1}
                   value={stageData.execution?.retry?.max_attempts ?? 1}
+                  onChange={(e) =>
+                    handleChange('retry', {
+                      ...localData.retry,
+                      maxAttempts: parseInt(e.target.value, 10) || 1,
+                      backoffMs: localData.retry?.backoffMs ?? stageData.execution?.retry?.backoff_ms ?? 1000,
+                    })
+                  }
                   className="w-full text-sm bg-surface border border-outline-variant rounded px-2 py-1.5 text-on-surface outline-none focus:border-primary"
                 />
               </div>
               <div>
-                <label className="block text-[10px] text-secondary mb-0.5">Backoff (ms)</label>
+                <label htmlFor="inspector-retry-backoff-ms" className="block text-[10px] text-secondary mb-0.5">Backoff (ms)</label>
                 <input
+                  id="inspector-retry-backoff-ms"
                   type="number"
                   min={0}
                   value={stageData.execution?.retry?.backoff_ms ?? 1000}
+                  onChange={(e) =>
+                    handleChange('retry', {
+                      ...localData.retry,
+                      maxAttempts: localData.retry?.maxAttempts ?? stageData.execution?.retry?.max_attempts ?? 1,
+                      backoffMs: parseInt(e.target.value, 10) || 0,
+                    })
+                  }
                   className="w-full text-sm bg-surface border border-outline-variant rounded px-2 py-1.5 text-on-surface outline-none focus:border-primary"
                 />
               </div>

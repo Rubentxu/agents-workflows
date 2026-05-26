@@ -139,6 +139,7 @@ export class WorkflowEditorPage {
     // Navigate with arn query param so editor loads the correct workflow
     await this.page.goto(studioUrl(`/studio/projects/${projectId}/design/workflows/${encodeURIComponent(arn)}/editor?arn=${encodeURIComponent(arn)}`));
     await this.page.waitForLoadState('domcontentloaded');
+    // Monaco will be ready after the page loads; caller should call waitForMonacoReady() before filling
   }
 
   /** The YAML textarea in the editor */
@@ -151,8 +152,14 @@ export class WorkflowEditorPage {
   }
 
   async switchToYamlTab() {
-    await this.page.getByRole('button', { name: 'YAML' }).click();
-    await this.page.waitForLoadState('domcontentloaded');
+    // Wait for the Monaco textarea (always visible in the right panel of the workflow editor).
+    // If a YAML tab button exists (e.g. other editors), use it; otherwise fall back to textarea.
+    const yamlButton = this.page.getByRole('button', { name: 'YAML' });
+    if (await yamlButton.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await yamlButton.click();
+      await this.page.waitForLoadState('domcontentloaded');
+    }
+    await this.page.locator('textarea').first().waitFor({ state: 'visible', timeout: 15000 });
   }
 
   async switchToCanvasTab() {

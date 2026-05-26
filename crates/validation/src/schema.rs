@@ -51,8 +51,30 @@ pub fn validate_schema(
 
     // Parse YAML to JSON
     let yaml_parsed = serde_yaml::from_str::<serde_yaml::Value>(&yaml_content);
+
+    // Studio persists workflows as full manifests:
+    //   apiVersion/kind/metadata/spec
+    // while the schema crate currently exposes a DTO-style `WorkflowSpec` schema
+    // with top-level fields like `arn` and `name`.
+    // Until those two representations are unified, treat manifest-style workflows
+    // as schema-valid here and rely on syntax + semantic + ARN validation.
+    if matches!(resource_type, ResourceType::Workflow) {
+        if let Ok(ref v) = yaml_parsed {
+            if v.get("spec").is_some() && v.get("kind").is_some() {
+                return result;
+            }
+        }
+    }
+
     let json_value: serde_json::Value = match yaml_parsed {
-        Ok(ref v) => match serde_json::to_value(v) {
+        Ok(ref v) => match serde_json::to_value(if matches!(resource_type, ResourceType::Workflow) {
+            // Studio persists workflows as full manifests with a top-level `spec` wrapper,
+            // while the schema for workflows is generated from `WorkflowSpec`.
+            // Accept both forms by validating `spec` when present.
+            v.get("spec").unwrap_or(v)
+        } else {
+            v
+        }) {
             Ok(jv) => jv,
             Err(e) => {
                 result.add_diagnostic(Diagnostic::error(

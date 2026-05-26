@@ -222,7 +222,10 @@ fn validate_semantic(
     };
 
     match resource_type {
-        ResourceType::Workflow => validate_workflow_semantic(&value, &mut result),
+        ResourceType::Workflow => {
+            let workflow_value = value.get("spec").unwrap_or(value);
+            validate_workflow_semantic(workflow_value, &mut result)
+        }
         ResourceType::Agent => validate_agent_semantic(&value, &mut result),
         ResourceType::Skill => validate_skill_semantic(&value, &mut result),
         ResourceType::Prompt => validate_prompt_semantic(&value, &mut result),

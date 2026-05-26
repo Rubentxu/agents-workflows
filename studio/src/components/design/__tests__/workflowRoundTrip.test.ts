@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import yaml from 'js-yaml';
 import type { Workflow } from '@/types/workflow';
 import type { WorkflowManifest } from '@/types/manifest.workflow';
-import { workflowToYaml, manifestToWorkflow } from '../WorkflowYamlEditor';
+import { workflowToYaml, manifestToWorkflow } from '@/lib/workflowToYaml';
 import { API_VERSION } from '@/types/manifest';
 
 describe('Workflow YAML round-trip', () => {

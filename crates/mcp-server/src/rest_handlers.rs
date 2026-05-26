@@ -1090,7 +1090,7 @@ pub async fn put_content(
     let arn = validate_arn(&arn)?;
 
     // Verify the resource exists
-    let _node = state.get_node_by_arn(&arn)
+    let node = state.get_node_by_arn(&arn)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse::new("INTERNAL_ERROR", &e))))?
         .ok_or_else(|| {
             (
@@ -1138,6 +1138,17 @@ pub async fn put_content(
             )
         })?;
     }
+
+    // Keep registry cache in sync with the on-disk content so MCP reads and reloads
+    // reflect the latest saved version immediately.
+    let mut updated = node.clone();
+    updated.config_json = Some(req.content.clone());
+    state.save_node(updated).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::new("INTERNAL_ERROR", &e.to_string())),
+        )
+    })?;
 
     Ok((StatusCode::OK, Json(serde_json::json!({
         "arn": arn,
@@ -1204,22 +1215,24 @@ impl validation::RegistryView for RegistryViewAdapter {
 
 fn parse_resource_type_from_arn(arn: &str) -> Result<validation::ResourceType, (StatusCode, Json<ErrorResponse>)> {
     // ARN format:
-    //   arn:local:global:{type}/{name}           → 5 parts, type at index 3
-    //   arn:local:workspace/{id}:{type}/{name}   → 6 parts, type at index 4
-    let parts: Vec<&str> = arn.split(':').collect();
+    //   arn:local:{scope}:{type}/{name}
+    // Examples:
+    //   arn:local:global:workflow/sdd-full
+    //   arn:local:project/app:workflow/my-flow
+    //   arn:local:workspace/abc123:agent/orchestrator
+    //
+    // The resource type is always in the last colon-delimited segment before '/'.
+    let resource_segment = arn.rsplit(':').next().unwrap_or_default();
+    let resource_type = resource_segment.split('/').next().unwrap_or_default();
 
-    let type_index = match parts.len() {
-        5 => 3,   // global scope: arn:local:global:agent/foo
-        6 => 4,   // workspace scope: arn:local:workspace/abc123:agent/foo
-        _ => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse::new("INVALID_ARN", &format!("Invalid ARN format: {}", arn))),
-            ));
-        }
-    };
+    if resource_type.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new("INVALID_ARN", &format!("Invalid ARN format: {}", arn))),
+        ));
+    }
 
-    match parts[type_index] {
+    match resource_type {
         "workflow" => Ok(validation::ResourceType::Workflow),
         "agent" => Ok(validation::ResourceType::Agent),
         "skill" => Ok(validation::ResourceType::Skill),

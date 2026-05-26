@@ -4,8 +4,9 @@
  * All edits happen directly in Monaco; no form tabs.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import type * as Monaco from 'monaco-editor';
 import { restApiUrl } from '@/lib/apiBase';
 import { useContent } from '@/hooks/useContent';
 import { EditorLayout } from './shared';
@@ -14,7 +15,7 @@ import { ResourceYamlEditor } from '@/components/monaco';
 export function AgentEditorPage() {
   const { projectId, agentId } = useParams();
   const navigate = useNavigate();
-  const { updateContent, validateContent } = useContent();
+  const { fetchContent, updateContent, validateContent } = useContent();
 
   const isNew = !agentId || agentId === 'new';
   const arn = isNew
@@ -25,6 +26,8 @@ export function AgentEditorPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [yamlContent, setYamlContent] = useState('');
+  // Ref to Monaco editor instance — used to read fresh content on save, avoiding stale React state
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
   // Load existing agent
   const fetchAgent = useCallback(async () => {
@@ -37,29 +40,17 @@ export function AgentEditorPage() {
     setError(null);
 
     try {
-      const response = await fetch(
-        `${restApiUrl('')}/agents/${encodeURIComponent(arn)}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to load agent: HTTP ${response.status}`);
+      const content = await fetchContent(arn);
+      if (content == null) {
+        throw new Error('Failed to load agent content');
       }
-
-      const data = (await response.json()) as {
-        id: string;
-        name: string;
-        namespace: string;
-        scope: string;
-        config: string;
-      };
-
-      setYamlContent(data.config);
+      setYamlContent(content);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load agent');
     } finally {
       setLoading(false);
     }
-  }, [isNew, arn]);
+  }, [isNew, arn, fetchContent]);
 
   useEffect(() => {
     fetchAgent();
@@ -71,8 +62,11 @@ export function AgentEditorPage() {
     setError(null);
 
     try {
+      // Read fresh content directly from Monaco model to avoid stale React state
+      const content = editorRef.current?.getValue() ?? yamlContent;
+
       // Validate content before saving
-      const validation = await validateContent(arn, yamlContent);
+      const validation = await validateContent(arn, content);
       if (validation && !validation.valid && validation.diagnostics.length > 0) {
         const errorMessages = validation.diagnostics
           .filter((d) => d.severity === 'error')
@@ -85,7 +79,7 @@ export function AgentEditorPage() {
         }
       }
 
-      const success = await updateContent(arn, yamlContent);
+      const success = await updateContent(arn, content);
       if (!success) {
         throw new Error('Failed to save agent content');
       }
@@ -140,6 +134,7 @@ export function AgentEditorPage() {
           arn={arn}
           initialValue={yamlContent}
           onChange={(value) => setYamlContent(value)}
+          editorRef={editorRef}
           onSave={async (value) => {
             await updateContent(arn, value);
           }}

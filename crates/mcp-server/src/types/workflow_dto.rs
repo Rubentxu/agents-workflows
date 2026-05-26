@@ -45,6 +45,8 @@ pub struct StageDto {
     #[serde(alias = "dependsOn", default)]
     pub depends_on: Vec<String>,
     #[serde(default)]
+    pub description: String,
+    #[serde(default)]
     pub input: HashMap<String, serde_json::Value>,
     #[serde(default)]
     pub output: Option<StageOutputDto>,

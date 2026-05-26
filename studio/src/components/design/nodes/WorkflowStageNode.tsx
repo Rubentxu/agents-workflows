@@ -13,6 +13,10 @@ export interface StageNodeData extends Record<string, unknown> {
   agent?: string;
   dependsOn?: string[];
   executionMode?: string;
+  retry?: {
+    maxAttempts: number;
+    backoffMs: number;
+  };
 }
 
 function WorkflowStageNodeComponent(props: NodeProps) {
@@ -21,6 +25,7 @@ function WorkflowStageNodeComponent(props: NodeProps) {
 
   return (
     <div
+      data-testid={`rf-stage-${data.id}`}
       className={`relative px-4 py-3 min-w-[180px] rounded-lg border-2 transition-all ${
         selected
           ? 'border-primary bg-primary/10 shadow-lg shadow-accent/20'

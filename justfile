@@ -53,6 +53,7 @@ default:
     @echo "=== DEVELOPMENT (Fast iteration) ==="
     @echo "  just dev-start           Run binary directly (foreground)"
     @echo "  just dev-run             Run with cargo (no binary copy)"
+    @echo "  just dev-refresh         Rebuild Studio + embed backend + restart local server"
     @echo "  just dev-watch           Watch mode (rebuild on changes)"
     @echo ""
     @echo "=== DEVELOPMENT + QUADLET (Best of both) ==="
@@ -65,6 +66,7 @@ default:
     @echo "=== HEALTH ==="
     @echo "  just health              Check server health"
     @echo "  just studio              Open Studio UI"
+    @echo "  just test_inspector_local Run workflow inspector spec against local server"
     @echo ""
     @echo "=== FULL LIST ==="
     @echo "  just --list             Show all recipes"
@@ -77,6 +79,21 @@ default:
 build:
     cargo build --release
     @echo "Built: {{ TARGET_BINARY }}"
+
+# Build Studio frontend assets
+studio-build:
+    @echo "Building Studio frontend..."
+    @if [ ! -d "{{ ROOT }}/studio/node_modules" ]; then \
+        echo "Installing Studio dependencies..."; \
+        cd {{ ROOT }}/studio && npm install; \
+    fi
+    cd {{ ROOT }}/studio && npm run build
+
+# Force rebuild backend binary so embedded Studio picks up dist/ changes
+backend-rebuild-embedded:
+    @echo "Rebuilding backend with embedded Studio assets..."
+    touch {{ ROOT }}/crates/mcp-server/src/main.rs
+    cargo build --release -p mcp-server
 
 # Install to ~/.local/bin/
 install:
@@ -210,9 +227,10 @@ run:
 
 # Start server in background (daemon)
 start-server:
-    cd {{ WORKSPACE_DIR }} && STUDIO_PATH="{{ ROOT }}/studio/dist" nohup {{ TARGET_BINARY }} start --workspace {{ WORKSPACE_DIR }} > ~/.workflows/server.log 2>&1 &
+    mkdir -p {{ WORKSPACE_DIR }}
+    cd {{ WORKSPACE_DIR }} && setsid env STUDIO_PATH="{{ ROOT }}/studio/dist" RUST_LOG=debug {{ TARGET_BINARY }} start --workspace {{ WORKSPACE_DIR }} > ~/.workflows/server.log 2>&1 < /dev/null &
     sleep 1
-    curl -s http://localhost:8081/health && echo " Server running" || echo " Server failed"
+    curl -s http://localhost:8081/api/health && echo " Server running" || echo " Server failed"
 
 # Stop server process
 stop-server:
@@ -220,7 +238,7 @@ stop-server:
 
 # Check server status
 server-status:
-    @curl -s http://localhost:8081/health 2>/dev/null || echo "Server not running"
+    @curl -s http://localhost:8081/api/health 2>/dev/null || echo "Server not running"
 
 # Show server logs
 server-logs:
@@ -268,8 +286,8 @@ clippy:
 
 # Check server health
 health:
-    @curl -s http://localhost:{{ MCP_PORT }}/health || echo "Server not responding"
-    @curl -s http://localhost:{{ REST_PORT }}/health || echo "REST not responding"
+    @curl -s http://localhost:{{ MCP_PORT }}/studio >/dev/null && echo "Studio responding on :{{ MCP_PORT }}" || echo "Studio not responding"
+    @curl -s http://localhost:{{ REST_PORT }}/api/health || echo "REST not responding"
 
 # Test MCP endpoint
 mcptest:
@@ -464,19 +482,24 @@ dev-run: kill-server
     @echo "Starting dev server with compiled binary (background)..."
     @echo "Logs: ~/.workflows/server.log"
     cd {{ ROOT }} && \
+        setsid env \
         STUDIO_PATH="{{ ROOT }}/studio/dist" \
         RUST_LOG=debug \
-        nohup ./target/release/workflow-mcp start --workspace {{ WORKSPACE_DIR }} --port {{ MCP_PORT }} > ~/.workflows/server.log 2>&1 &
+        ./target/release/workflow-mcp start --workspace {{ WORKSPACE_DIR }} --port {{ MCP_PORT }} > ~/.workflows/server.log 2>&1 < /dev/null &
     sleep 3
-    @if curl -sf http://localhost:{{ REST_PORT }}/health > /dev/null 2>&1; then \
+    @if curl -sf http://localhost:{{ REST_PORT }}/api/health > /dev/null 2>&1; then \
         echo "✓ Server running at http://localhost:{{ MCP_PORT }}/studio"; \
-        echo "✓ Health: http://localhost:{{ REST_PORT }}/health"; \
+        echo "✓ Health: http://localhost:{{ REST_PORT }}/api/health"; \
         echo "✓ Studio ready for manual testing"; \
     else \
         echo "✗ Server failed to start. Check logs:"; \
         tail -20 ~/.workflows/server.log; \
         exit 1; \
     fi
+
+# Full local refresh: rebuild Studio, re-embed backend, restart server in background
+dev-refresh: studio-build backend-rebuild-embedded dev-run
+    @echo "✓ Local server refreshed with latest embedded Studio build"
 
 # Rebuild container image and restart service (after code changes)
 dev-rebuild:
@@ -539,9 +562,19 @@ test_e2e: test_container_up
     cd tests && npx playwright test
     @echo "Reports at: tests/playwright-report/"
 
-# Run all E2E tests against an existing local server
-test_e2e_local:
-    cd tests && E2E_MODE=attach SKIP_CONTAINER_CHECK=1 npx playwright test
+# Run Playwright E2E tests against an existing local server.
+#
+# Parameters:
+#   spec    - optional spec path, e.g. `e2e/studio-workflow-inspector.spec.ts`
+#   project - optional Playwright project, e.g. `chromium-studio`
+#   grep    - optional test name filter, e.g. `T4`
+#
+# Examples:
+#   just test_e2e_local
+#   just test_e2e_local e2e/studio-workflow-inspector.spec.ts
+#   just test_e2e_local e2e/studio-workflow-inspector.spec.ts chromium-studio T4
+test_e2e_local spec="" project="" grep="":
+    cd tests && SPEC="{{ spec }}" PROJECT="{{ project }}" GREP="{{ grep }}" E2E_MODE=attach SKIP_CONTAINER_CHECK=1 bash -lc 'set -euo pipefail; cmd=(npx playwright test); if [ -n "$SPEC" ]; then cmd+=("$SPEC"); fi; if [ -n "$PROJECT" ]; then cmd+=("--project=$PROJECT"); fi; if [ -n "$GREP" ]; then cmd+=("-g" "$GREP"); fi; "${cmd[@]}"'
 
 # Run API tests only
 test_api: test_container_up
@@ -561,7 +594,7 @@ test_ui: test_container_up
 
 # Run UI tests against an existing local server
 test_ui_local:
-    cd tests && E2E_MODE=attach SKIP_CONTAINER_CHECK=1 npx playwright test --project=chromium
+    cd tests && E2E_MODE=attach SKIP_CONTAINER_CHECK=1 npx playwright test --project=chromium-studio
 
 # Run visual regression baselines against an existing local server
 test_visual_local:

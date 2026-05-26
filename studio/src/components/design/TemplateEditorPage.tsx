@@ -5,16 +5,17 @@
  * Uses MarkdownResourceEditor for format-adaptive editing.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { restApiUrl } from '@/lib/apiBase';
+import type * as Monaco from 'monaco-editor';
 import { useContent } from '@/hooks/useContent';
 import { EditorLayout } from './shared';
 import { MarkdownResourceEditor } from '@/components/monaco';
+import { isYamlConfigFormat, yamlConfigToMarkdown, markdownToYamlConfig } from '@/lib/contentTransform';
 
 export function TemplateEditorPage() {
   const { projectId, templateId } = useParams();
-  const { updateContent, validateContent } = useContent();
+  const { fetchContent, updateContent, validateContent } = useContent();
 
   const isNew = !templateId || templateId === 'new';
   const scope = 'global';
@@ -26,6 +27,8 @@ export function TemplateEditorPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [markdownContent, setMarkdownContent] = useState('');
+  // Ref to Monaco editor instance — used to read fresh content on save, avoiding stale React state
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
   // Load existing template
   const fetchTemplate = useCallback(async () => {
@@ -38,29 +41,21 @@ export function TemplateEditorPage() {
     setError(null);
 
     try {
-      const response = await fetch(
-        `${restApiUrl('')}/templates/${encodeURIComponent(arn)}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to load template: HTTP ${response.status}`);
+      const content = await fetchContent(arn);
+      if (content == null) {
+        throw new Error('Failed to load template content');
       }
-
-      const data = (await response.json()) as {
-        id: string;
-        name: string;
-        namespace: string;
-        scope: string;
-        config: string;
-      };
-
-      setMarkdownContent(data.config);
+      // Transform YAML config format to markdown with frontmatter for the editor
+      const transformed = isYamlConfigFormat(content)
+        ? yamlConfigToMarkdown(content)
+        : content;
+      setMarkdownContent(transformed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load template');
     } finally {
       setLoading(false);
     }
-  }, [isNew, arn]);
+  }, [isNew, arn, fetchContent]);
 
   useEffect(() => {
     fetchTemplate();
@@ -72,8 +67,21 @@ export function TemplateEditorPage() {
     setError(null);
 
     try {
+      // Read fresh content directly from Monaco model(s) to avoid stale React state.
+      // For split view, reconstruct from both editors; for single view, use the active editor.
+      const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
+      let content: string;
+      if (editors.length >= 2) {
+        // Split view: reconstruct with --- markers
+        const fmContent = editors[0]?.getModel?.()?.getValue?.() ?? '';
+        const bodyContent = editors[1]?.getModel?.()?.getValue?.() ?? '';
+        content = `---\n${fmContent}\n---\n${bodyContent}`;
+      } else {
+        content = editors[0]?.getModel?.()?.getValue?.() ?? markdownContent;
+      }
+
       // Validate content before saving
-      const validation = await validateContent(arn, markdownContent);
+      const validation = await validateContent(arn, content);
       if (validation && !validation.valid && validation.diagnostics.length > 0) {
         const errorMessages = validation.diagnostics
           .filter((d) => d.severity === 'error')
@@ -86,7 +94,7 @@ export function TemplateEditorPage() {
         }
       }
 
-      const success = await updateContent(arn, markdownContent);
+      const success = await updateContent(arn, content);
       if (!success) {
         throw new Error('Failed to save template content');
       }
@@ -123,8 +131,11 @@ export function TemplateEditorPage() {
           arn={arn}
           initialValue={markdownContent}
           onChange={(value) => setMarkdownContent(value)}
+          editorRef={editorRef}
           onSave={async (value) => {
-            await updateContent(arn, value);
+            // Transform markdown format to YAML config before saving
+            const yamlConfig = markdownToYamlConfig(value, 'Template');
+            await updateContent(arn, yamlConfig);
           }}
         />
       </div>

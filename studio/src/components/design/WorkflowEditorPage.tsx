@@ -6,7 +6,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import * as yaml from 'js-yaml';
 import type * as Monaco from 'monaco-editor';
 import {
   ReactFlow,
@@ -30,38 +29,73 @@ import { WorkflowStageNode, type StageNodeData } from './nodes/WorkflowStageNode
 import { WorkflowInspector } from './inspector/WorkflowInspector';
 import { WorkflowYamlEditor } from './WorkflowYamlEditor';
 import { LoadingState } from '@/components/states/LoadingState';
+import { workflowToYaml } from '@/lib/workflowToYaml';
+import { InlineDiffSummary } from './shared/InlineDiffSummary';
 
 import type { Workflow } from '@/types/workflow';
-import type { WorkflowSpec, Stage, WorkflowManifest } from '@/types/manifest.workflow';
-import { API_VERSION } from '@/types/manifest';
+import type { WorkflowSpec, Stage } from '@/types/manifest.workflow';
 
-type WorkflowStatus = 'draft' | 'published' | 'deprecated' | 'archived';
-
-interface WorkflowData {
-  id: string;
-  name: string;
-  namespace: string;
+// MCP WorkflowDto — returned by workflow_get MCP tool
+interface McpStageDto {
+  id?: string;
+  agent: string;
+  depends_on: string[];
   description?: string;
-  version?: string;
-  status: WorkflowStatus;
-  spec?: WorkflowSpec;
+  input: Record<string, unknown>;
+  execution?: {
+    mode: string;
+    retry?: { max_attempts: number; backoff_ms: number };
+  };
+  conditions: Array<{ when: string; operator: string; value: unknown }>;
+}
+
+interface McpWorkflowDto {
+  arn: string;
+  name: string;
+  description: string;
+  scope: string;
+  stages: Record<string, McpStageDto>;
+  execution?: { mode: string; on_failure: string };
 }
 
 /**
- * Convert WorkflowData (manifest-style: spec.stages) to Workflow (internal editor type).
+ * Convert MCP stage DTO (HashMap value) to internal Stage format.
  */
-function workflowDataToWorkflow(data: WorkflowData, projectId: string): Workflow {
+function mcpStageToStage(dto: McpStageDto, id: string): Stage {
   return {
-    arn: data.id || `arn:local:project/${projectId}:workflow/${data.name}`,
-    name: data.name,
-    version: data.version || '1.0',
-    description: data.description ?? data.spec?.description ?? '',
+    id: dto.id ?? id,
+    agent: dto.agent,
+    depends_on: dto.depends_on ?? [],
+    description: dto.description ?? '',
+    input: (dto.input ?? {}) as Record<string, import('@/types/workflow').InputValue>,
+    output: { artifacts: [] },
+    execution: {
+      mode: (dto.execution?.mode as Stage['execution']['mode']) ?? 'sequential',
+      retry: dto.execution?.retry ?? { max_attempts: 1, backoff_ms: 0 },
+    },
+    conditions: (dto.conditions ?? []) as Stage['conditions'],
+    metrics: [],
+  };
+}
+
+/**
+ * Convert MCP WorkflowDto (from workflow_get) to internal Workflow format.
+ */
+function mcpWorkflowToWorkflow(dto: McpWorkflowDto, _projectId: string): Workflow {
+  const stageArray = Object.entries(dto.stages).map(([id, stageDto]) =>
+    mcpStageToStage(stageDto, id)
+  );
+  return {
+    arn: dto.arn,
+    name: dto.name,
+    version: '1.0',
+    description: dto.description ?? '',
     agents: {},
     skills: {},
-    stages: (data.spec?.stages ?? []) as Stage[],
+    stages: stageArray,
     execution: {
-      mode: (data.spec?.execution?.mode as Workflow['execution']['mode']) ?? 'sequential',
-      stop_on_error: data.spec?.execution?.stop_on_error ?? true,
+      mode: (dto.execution?.mode as Workflow['execution']['mode']) ?? 'sequential',
+      stop_on_error: true,
     },
     metrics: { streaming: false, interval_ms: 5000, channels: [] },
   };
@@ -114,28 +148,44 @@ const nodeTypes: NodeTypes = {
   stage: WorkflowStageNode,
 };
 
-function workflowToYaml(workflow: Workflow | null): string {
-  if (!workflow) return '';
-  const manifest: WorkflowManifest = {
-    apiVersion: API_VERSION,
-    kind: 'Workflow',
-    metadata: {
-      uid: '',
-      name: workflow.name,
-      scope: 'global',
-      labels: {},
-      annotations: {},
-    },
-    spec: {
-      description: workflow.description,
-      stages: workflow.stages,
-      agents: workflow.agents,
-      skills: workflow.skills,
-      execution: workflow.execution as unknown as { mode: string; stop_on_error: boolean },
-      metrics: workflow.metrics as { streaming: boolean; interval_ms: number; channels: string[] },
-    },
+/**
+ * Apply a stage patch to the workflow and return the updated workflow.
+ * This is the sole write path for stage mutations from the inspector.
+ */
+function applyStagePatch(
+  workflow: Workflow,
+  stageId: string,
+  patch: Partial<StageNodeData>
+): Workflow {
+  return {
+    ...workflow,
+    stages: workflow.stages.map((s) => {
+      if (s.id !== stageId) return s;
+
+      const retryPatch = patch.retry;
+      const executionPatch = retryPatch
+        ? {
+            retry: {
+              max_attempts: retryPatch.maxAttempts,
+              backoff_ms: retryPatch.backoffMs,
+            },
+          }
+        : {};
+
+      return {
+        ...s,
+        id: patch.id ?? s.id,
+        description: (patch as { description?: string }).description ?? s.description,
+        agent: (patch as { agent?: string }).agent ?? s.agent,
+        depends_on: (patch as { dependsOn?: string[] }).dependsOn ?? s.depends_on,
+        execution: {
+          ...s.execution,
+          mode: (patch as { executionMode?: string }).executionMode as typeof s.execution.mode ?? s.execution.mode,
+          ...executionPatch,
+        },
+      };
+    }),
   };
-  return yaml.dump(manifest, { indent: 2, lineWidth: -1, noRefs: true });
 }
 
 export function WorkflowEditorPage() {
@@ -149,6 +199,7 @@ export function WorkflowEditorPage() {
   const arn = searchParams.get('arn');
 
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
+  const [originalWorkflow, setOriginalWorkflow] = useState<Workflow | null>(null);
   const [loading, setLoading] = useState(!isNew);
   const [error, setError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -175,6 +226,12 @@ export function WorkflowEditorPage() {
           agent: stage.agent,
           dependsOn: stage.depends_on,
           executionMode: stage.execution?.mode,
+          retry: stage.execution?.retry
+            ? {
+                maxAttempts: stage.execution.retry.max_attempts,
+                backoffMs: stage.execution.retry.backoff_ms,
+              }
+            : undefined,
         } as StageNodeData,
       };
     });
@@ -215,11 +272,14 @@ export function WorkflowEditorPage() {
         setError('Workflow not found');
         return;
       }
-      const wf = result as unknown as { kind: string; data: WorkflowData };
-      const internalWf = workflowDataToWorkflow(wf.data, projectId ?? 'app');
+      // getResourceByArn returns McpWorkflowDto from the workflow_get MCP tool
+      const wf = result as unknown as { kind: string; data: McpWorkflowDto };
+      const internalWf = mcpWorkflowToWorkflow(wf.data, projectId ?? 'app');
       setWorkflow(internalWf);
-      setNodes(buildNodes(wf.data.spec?.stages));
-      setEdges(buildEdges(wf.data.spec?.stages));
+      setOriginalWorkflow(internalWf);
+      // Use the converted stages from internalWf (not wf.data which is the MCP DTO format)
+      setNodes(buildNodes(internalWf.stages));
+      setEdges(buildEdges(internalWf.stages));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load workflow');
     } finally {
@@ -329,6 +389,10 @@ export function WorkflowEditorPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <InlineDiffSummary
+            original={originalWorkflow as { stages?: Array<{ id: string; [key: string]: unknown }> } | null}
+            current={workflow as { stages?: Array<{ id: string; [key: string]: unknown }> } | null}
+          />
           <button
             onClick={handleSave}
             disabled={saving}
@@ -376,34 +440,18 @@ export function WorkflowEditorPage() {
             node={selectedNode as StageNode}
             workflow={workflowForInspector(workflow)}
             onUpdate={(updated) => {
+              const nodeId = selectedNodeId;
               // Update nodes in ReactFlow canvas
               setNodes((nds) =>
                 nds.map((n) =>
-                  n.id === selectedNodeId ? { ...n, data: { ...n.data, ...updated } } : n
+                  n.id === nodeId ? { ...n, data: { ...n.data, ...updated } } : n
                 )
               );
-              // Also update workflow.stages to keep in sync with visual canvas
-              if (workflow) {
+              // Apply patch to workflow stages — sole write path
+              if (workflow && nodeId) {
                 setWorkflow((prev) => {
                   if (!prev) return prev;
-                  return {
-                    ...prev,
-                    stages: prev.stages.map((s) =>
-                      s.id === selectedNodeId
-                        ? {
-                            ...s,
-                            id: (updated as { id?: string }).id ?? s.id,
-                            description: (updated as { description?: string }).description ?? s.description,
-                            agent: (updated as { agent?: string }).agent ?? s.agent,
-                            depends_on: (updated as { dependsOn?: string[] }).dependsOn ?? s.depends_on,
-                            execution: {
-                              ...s.execution,
-                              ...(updated as { execution?: Partial<Stage['execution']> }).execution,
-                            },
-                          }
-                        : s
-                    ),
-                  };
+                  return applyStagePatch(prev, nodeId, updated);
                 });
               }
             }}

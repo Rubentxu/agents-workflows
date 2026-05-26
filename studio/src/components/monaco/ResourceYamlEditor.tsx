@@ -24,6 +24,8 @@ export interface ResourceYamlEditorProps {
   initialValue?: string;
   onChange?: (value: string) => void;
   onSave?: (value: string) => Promise<void>;
+  /** Optional ref to expose the Monaco editor instance for external save coordination */
+  editorRef?: React.RefObject<Monaco.editor.IStandaloneCodeEditor | null>;
   readOnly?: boolean;
   height?: string;
   theme?: 'vs-dark' | 'light';
@@ -44,6 +46,7 @@ export function ResourceYamlEditor({
   initialValue = '',
   onChange,
   onSave,
+  editorRef: externalEditorRef,
   readOnly = false,
   height = '100%',
   theme = 'vs-dark',
@@ -99,6 +102,14 @@ export function ResourceYamlEditor({
     editorRef.current = editor;
     monacoRef.current = monaco;
 
+    // Forward to external ref if provided (for parent component save coordination)
+    if (externalEditorRef) {
+      (externalEditorRef as React.MutableRefObject<Monaco.editor.IStandaloneCodeEditor | null>).current = editor;
+    }
+
+    // Signal that Monaco model is now ready for test bridge operations.
+    resolveModelReadyRef.current?.();
+
     if (!configuredRef.current) {
       configuredRef.current = true;
 
@@ -121,7 +132,7 @@ export function ResourceYamlEditor({
           : [],
       });
     }
-  }, [schema]);
+  }, [schema, externalEditorRef]);
 
   const handleChange = useCallback(
     (newValue: string | undefined) => {
@@ -149,7 +160,19 @@ export function ResourceYamlEditor({
     setErrorMessage(null);
 
     try {
-      await onSave(value);
+      // Read directly from Monaco editor model to get the current content.
+      // Use window.monaco as the primary source since it is always available
+      // when Monaco is mounted. Fall back to editorRef if window.monaco is not accessible.
+      // This ensures we save what the user sees, even after programmatic changes
+      // (e.g., via test helpers or canvas sync) where React state may not have flushed yet.
+      let currentContent: string;
+      const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
+      if (editors.length > 0) {
+        currentContent = editors[0]?.getModel?.()?.getValue?.() ?? value;
+      } else {
+        currentContent = editorRef.current?.getModel?.()?.getValue() ?? value;
+      }
+      await onSave(currentContent);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (err) {
@@ -199,6 +222,74 @@ export function ResourceYamlEditor({
   }, [arn, value, parseError, validateContent]);
 
   const canSave = !parseError && onSave && saveStatus !== 'saving';
+
+  // Stable ready promise for tests — resolved when Monaco editor model is available.
+  // Resolved in handleMount once editorRef is set (Monaco model is ready at that point).
+  const modelReadyRef = useRef<Promise<void>>(Promise.resolve());
+  const resolveModelReadyRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    // Create a new promise each time (in case of remount scenarios).
+    // Store resolve function so handleMount can call it.
+    modelReadyRef.current = new Promise<void>(resolve => { resolveModelReadyRef.current = resolve; });
+
+    // If Monaco already mounted before this useEffect ran (onMount fires before useEffect),
+    // resolve immediately so tests don't hang.
+    if (editorRef.current) {
+      resolveModelReadyRef.current?.();
+    }
+
+    const globalWindow = window as typeof window & {
+      __AW_MONACO_TEST__?: {
+        yamlEditors?: Record<string, {
+          setValue: (next: string) => void;
+          getValue: () => string;
+          save: () => Promise<void>;
+          canSave: () => boolean;
+          getError: () => string | null;
+          /** Resolves when Monaco editor model is ready. */
+          ready: Promise<void>;
+        }>;
+      };
+    };
+
+    globalWindow.__AW_MONACO_TEST__ ??= {};
+    globalWindow.__AW_MONACO_TEST__.yamlEditors ??= {};
+    globalWindow.__AW_MONACO_TEST__.yamlEditors[arn] = {
+      setValue: (next: string) => {
+        handleChange(next);
+        // Also update Monaco's model directly so save() reads the correct content.
+        // handleChange only updates React state; Monaco's model isn't synced until
+        // the component re-renders and @monaco-editor/react calls editor.setValue().
+        // By calling model.setValue() here directly, Monaco is immediately consistent.
+        // Try component ref first, then fall back to window.monaco global.
+        let model = editorRef.current?.getModel();
+        if (!model) {
+          const editors = (window as any).monaco?.editor?.getEditors?.();
+          model = editors?.[0]?.getModel?.();
+        }
+        model?.setValue(next);
+      },
+      // Read directly from Monaco model (source of truth for displayed content),
+      // not React state which lags behind after programmatic setValue calls.
+      getValue: () => {
+        let model = editorRef.current?.getModel();
+        if (!model) {
+          const editors = (window as any).monaco?.editor?.getEditors?.();
+          model = editors?.[0]?.getModel?.();
+        }
+        return model?.getValue() ?? value;
+      },
+      save: () => handleSave(),
+      canSave: () => Boolean(canSave),
+      getError: () => parseError ?? errorMessage,
+      ready: modelReadyRef.current,
+    };
+
+    return () => {
+      delete globalWindow.__AW_MONACO_TEST__?.yamlEditors?.[arn];
+    };
+  }, [arn, canSave, errorMessage, handleChange, handleSave, parseError, value]);
 
   return (
     <div className="flex flex-col h-full">

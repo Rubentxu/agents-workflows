@@ -1,18 +1,18 @@
 /**
  * Studio Resource Editors — CRUD + UX + Visual Evidence
  *
- * Validates create → save → catalog → edit → update → verify
- * for all 5 resource types (Agent, Skill, Prompt, Tool, Template).
+ * DEPRECATED: This file tests the OLD form-based tab UI that no longer exists.
  *
- * Each test:
- * 1. Creates a resource through the editor UI
- * 2. Verifies it appears in the catalog
- * 3. Verifies persisted data via REST API
- * 4. Opens the editor again to edit
- * 5. Updates fields and saves
- * 6. Verifies updated data via REST API
+ * The editors have been migrated to Monaco-based editing (ADR-0016):
+ *   - Agent, Tool → ResourceYamlEditor (Monaco YAML)
+ *   - Skill, Prompt, Template → MarkdownResourceEditor (Monaco split view)
+ *   - Workflow → ReactFlow canvas + WorkflowYamlEditor
  *
- * Screenshots captured at every key step for UX review.
+ * REPLACEMENT: studio-monaco-resource-editors.spec.ts
+ *
+ * All tests in this file are SKIPPED. Run the new Monaco tests instead.
+ *
+ * @deprecated
  */
 
 import { test, expect } from '../helpers/e2e-fixtures';
@@ -87,7 +87,7 @@ async function addTag(input: import('@playwright/test').Locator, value: string) 
   await input.press('Enter');
 }
 
-test.describe('Studio Resource Editors — CRUD + UX + visual evidence', () => {
+test.describe.skip('DEPRECATED: Studio Resource Editors — CRUD + UX + visual evidence', () => {
   test('agent editor creates and updates an agent with clear configuration flow', async ({ page, rest, seedRegistry, pageEvidence }, testInfo) => {
     const name = rest.uniqueName('editor-agent');
     const updatedDescription = 'Updated agent description for E2E validation';

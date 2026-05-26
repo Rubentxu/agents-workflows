@@ -4,16 +4,16 @@
  * All edits happen directly in Monaco; no form tabs.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { restApiUrl } from '@/lib/apiBase';
+import type * as Monaco from 'monaco-editor';
 import { useContent } from '@/hooks/useContent';
 import { EditorLayout } from './shared';
 import { ResourceYamlEditor } from '@/components/monaco';
 
 export function ToolEditorPage() {
   const { projectId, toolId } = useParams();
-  const { updateContent, validateContent } = useContent();
+  const { fetchContent, updateContent, validateContent } = useContent();
 
   const isNew = !toolId || toolId === 'new';
   const scope = 'global';
@@ -25,6 +25,8 @@ export function ToolEditorPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [yamlContent, setYamlContent] = useState('');
+  // Ref to Monaco editor instance — used to read fresh content on save, avoiding stale React state
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
   // Load existing tool
   const fetchTool = useCallback(async () => {
@@ -37,29 +39,17 @@ export function ToolEditorPage() {
     setError(null);
 
     try {
-      const response = await fetch(
-        `${restApiUrl('')}/tools/${encodeURIComponent(arn)}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to load tool: HTTP ${response.status}`);
+      const content = await fetchContent(arn);
+      if (content == null) {
+        throw new Error('Failed to load tool content');
       }
-
-      const data = (await response.json()) as {
-        id: string;
-        name: string;
-        namespace: string;
-        scope: string;
-        config: string;
-      };
-
-      setYamlContent(data.config);
+      setYamlContent(content);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load tool');
     } finally {
       setLoading(false);
     }
-  }, [isNew, arn]);
+  }, [isNew, arn, fetchContent]);
 
   useEffect(() => {
     fetchTool();
@@ -71,8 +61,11 @@ export function ToolEditorPage() {
     setError(null);
 
     try {
+      // Read fresh content directly from Monaco model to avoid stale React state
+      const content = editorRef.current?.getValue() ?? yamlContent;
+
       // Validate content before saving
-      const validation = await validateContent(arn, yamlContent);
+      const validation = await validateContent(arn, content);
       if (validation && !validation.valid && validation.diagnostics.length > 0) {
         const errorMessages = validation.diagnostics
           .filter((d) => d.severity === 'error')
@@ -85,7 +78,7 @@ export function ToolEditorPage() {
         }
       }
 
-      const success = await updateContent(arn, yamlContent);
+      const success = await updateContent(arn, content);
       if (!success) {
         throw new Error('Failed to save tool content');
       }
@@ -122,6 +115,7 @@ export function ToolEditorPage() {
           arn={arn}
           initialValue={yamlContent}
           onChange={(value) => setYamlContent(value)}
+          editorRef={editorRef}
           onSave={async (value) => {
             await updateContent(arn, value);
           }}

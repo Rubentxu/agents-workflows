@@ -86,11 +86,22 @@ impl WorkflowMcpHandler {
                         id: Some(stage.id.clone()),
                         agent: stage.agent.clone(),
                         depends_on: stage.depends_on.clone(),
+                        description: stage.description.clone(),
                         input: stage.input.iter().map(|(k, v)| {
                             (k.clone(), serde_json::to_value(v).unwrap_or(serde_json::Value::Null))
                         }).collect(),
                         output: None,
-                        execution: None,
+                        execution: Some(crate::types::StageExecution {
+                            mode: match stage.execution.mode {
+                                workflow::domain::ExecutionMode::Parallel => "parallel".to_string(),
+                                workflow::domain::ExecutionMode::Batch => "batch".to_string(),
+                                _ => "sequential".to_string(),
+                            },
+                            retry: crate::types::RetryConfig {
+                                max_attempts: stage.execution.retry.max_attempts as usize,
+                                backoff_ms: stage.execution.retry.backoff_ms,
+                            },
+                        }),
                         conditions: vec![],
                     });
                 }

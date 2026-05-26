@@ -1,21 +1,18 @@
 /**
  * Studio Editor Features — Exhaustive E2E Test Suite
  *
- * Comprehensive tests covering navigation, layout, CRUD flows, UX patterns,
- * data persistence, cross-editor consistency, and visual evidence for all
- * 5 resource editors (Agent, Skill, Prompt, Tool, Template).
+ * DEPRECATED: This file tests the OLD form-based tab UI that no longer exists.
  *
- * Organization:
- *   1. Editor Navigation & Layout (4 tests) — Consistency across editors
- *   2. Agent Editor Features (7 tests) — Full feature coverage
- *   3. Skill Editor Features (4 tests) — Full feature coverage
- *   4. Prompt Editor Features (4 tests) — Full feature coverage
- *   5. Tool Editor Features (4 tests) — Full feature coverage
- *   6. Template Editor Features (4 tests) — Full feature coverage
+ * The editors have been migrated to Monaco-based editing (ADR-0016):
+ *   - Agent, Tool → ResourceYamlEditor (Monaco YAML)
+ *   - Skill, Prompt, Template → MarkdownResourceEditor (Monaco split view)
+ *   - Workflow → ReactFlow canvas + WorkflowYamlEditor
  *
- * Every test captures visual evidence (screenshots) at key steps.
- * Every test verifies backend state via REST API.
- * Every test uses seed-based cleanup via seedRegistry.
+ * REPLACEMENT: studio-monaco-resource-editors.spec.ts
+ *
+ * All tests in this file are SKIPPED. Run the new Monaco tests instead.
+ *
+ * @deprecated
  */
 
 import { test, expect } from '../helpers/e2e-fixtures';
@@ -95,7 +92,7 @@ function assertCleanEvidence(pageEvidence: { consoleErrors: string[]; pageErrors
 
 // ─── 1. Editor Navigation & Layout ─────────────────────────────────────────
 
-test.describe('Editor Navigation & Layout', () => {
+test.describe.skip('DEPRECATED: Editor Navigation & Layout', () => {
   const RESOURCE_TYPES = [
     { kind: 'agents', label: 'Agents', tabs: ['Configuration', 'Resources', 'Permissions', 'YAML Preview'] },
     { kind: 'skills', label: 'Skills', tabs: ['Configuration', 'Content', 'Tools & References', 'YAML Preview'] },
@@ -168,7 +165,7 @@ test.describe('Editor Navigation & Layout', () => {
 
 // ─── 2. Agent Editor Features ──────────────────────────────────────────────
 
-test.describe('Agent Editor Features', () => {
+test.describe.skip('DEPRECATED: Agent Editor Features', () => {
   test('create agent with all config fields, verify in catalog and backend', async ({ page, rest, seedRegistry }, testInfo) => {
     const name = rest.uniqueName('feat-agent');
     const arn = globalArn('agent', name);
@@ -354,7 +351,7 @@ test.describe('Agent Editor Features', () => {
 
 // ─── 3. Skill Editor Features ──────────────────────────────────────────────
 
-test.describe('Skill Editor Features', () => {
+test.describe.skip('DEPRECATED: Skill Editor Features', () => {
   test('create skill with inline content and verify variable-rich description', async ({ page, rest, seedRegistry }, testInfo) => {
     const name = rest.uniqueName('feat-skill');
     const skillArn = globalArn('skill', name);
@@ -474,7 +471,7 @@ test.describe('Skill Editor Features', () => {
 
 // ─── 4. Prompt Editor Features ──────────────────────────────────────────────
 
-test.describe('Prompt Editor Features', () => {
+test.describe.skip('DEPRECATED: Prompt Editor Features', () => {
   test('create prompt with variable detection, template linkage, and kind selection', async ({ page, rest, seedRegistry }, testInfo) => {
     const templateName = rest.uniqueName('prompt-template');
     const { arn: templateArn } = await rest.createTemplate(templateName);
@@ -599,7 +596,7 @@ test.describe('Prompt Editor Features', () => {
 
 // ─── 5. Tool Editor Features ───────────────────────────────────────────────
 
-test.describe('Tool Editor Features', () => {
+test.describe.skip('DEPRECATED: Tool Editor Features', () => {
   test('create custom tool with schema, source config, and tags', async ({ page, rest, seedRegistry }, testInfo) => {
     const name = rest.uniqueName('feat-tool');
     const toolArn = globalArn('tool', name);
@@ -730,7 +727,7 @@ test.describe('Tool Editor Features', () => {
 
 // ─── 6. Template Editor Features ───────────────────────────────────────────
 
-test.describe('Template Editor Features', () => {
+test.describe.skip('DEPRECATED: Template Editor Features', () => {
   test('create template with format, target kind, and content path', async ({ page, rest, seedRegistry }, testInfo) => {
     const name = rest.uniqueName('feat-template');
     const templateArn = globalArn('template', name);

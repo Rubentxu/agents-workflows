@@ -23,6 +23,8 @@ export interface MarkdownResourceEditorProps {
   initialValue?: string;
   onChange?: (value: string) => void;
   onSave?: (value: string) => Promise<void>;
+  /** Optional ref to expose the Monaco editor instance for external save coordination */
+  editorRef?: React.RefObject<Monaco.editor.IStandaloneCodeEditor | null>;
   readOnly?: boolean;
   theme?: 'vs-dark' | 'light';
 }
@@ -114,6 +116,7 @@ export function MarkdownResourceEditor({
   initialValue = '',
   onChange,
   onSave,
+  editorRef: externalEditorRef,
   readOnly = false,
   theme = 'vs-dark',
 }: MarkdownResourceEditorProps) {
@@ -149,6 +152,20 @@ export function MarkdownResourceEditor({
 
   const parsed = splitFrontmatter(value);
 
+  const applyCombinedValue = useCallback(
+    (nextContent: string) => {
+      setValue(nextContent);
+      const nextParsed = splitFrontmatter(nextContent);
+      setFrontmatterError(nextParsed.error ?? null);
+      const format = extractFormat(nextParsed.frontmatter);
+      if (format) {
+        setBodyLanguage(formatToLanguage(format));
+      }
+      onChange?.(nextContent);
+    },
+    [onChange]
+  );
+
   useEffect(() => {
     setFrontmatterError(parsed.error ?? null);
   }, [parsed.error]);
@@ -156,6 +173,14 @@ export function MarkdownResourceEditor({
   const handleFrontmatterMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+
+    // Forward to external ref if provided (for parent component save coordination)
+    if (externalEditorRef) {
+      (externalEditorRef as React.MutableRefObject<Monaco.editor.IStandaloneCodeEditor | null>).current = editor;
+    }
+
+    // Signal that Monaco model is now ready for test bridge operations.
+    resolveModelReadyRef.current?.();
 
     if (!configuredRef.current) {
       configuredRef.current = true;
@@ -178,11 +203,16 @@ export function MarkdownResourceEditor({
           : [],
       });
     }
-  }, [schema]);
+  }, [schema, externalEditorRef]);
 
   const handleBodyMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+
+    // Forward to external ref if provided (body editor is secondary but still exposed)
+    if (externalEditorRef) {
+      (externalEditorRef as React.MutableRefObject<Monaco.editor.IStandaloneCodeEditor | null>).current = editor;
+    }
 
     monaco.languages.setLanguageConfiguration('markdown', {
       surroundingPairs: [
@@ -201,31 +231,24 @@ export function MarkdownResourceEditor({
         { open: '---', close: '---' },
       ],
     });
-  }, []);
+  }, [externalEditorRef]);
 
   const handleFrontmatterChange = useCallback(
     (newValue: string | undefined) => {
       const fm = newValue ?? '';
       const newContent = joinFrontmatter(fm, parsed.body);
-      setValue(newContent);
-      // Extract format from frontmatter and update body language
-      const format = extractFormat(fm);
-      if (format) {
-        setBodyLanguage(formatToLanguage(format));
-      }
-      onChange?.(newContent);
+      applyCombinedValue(newContent);
     },
-    [parsed.body, onChange]
+    [applyCombinedValue, parsed.body]
   );
 
   const handleBodyChange = useCallback(
     (newValue: string | undefined) => {
       const body = newValue ?? '';
       const newContent = joinFrontmatter(parsed.frontmatter, body);
-      setValue(newContent);
-      onChange?.(newContent);
+      applyCombinedValue(newContent);
     },
-    [parsed.frontmatter, onChange]
+    [applyCombinedValue, parsed.frontmatter]
   );
 
   const handleSave = useCallback(async () => {
@@ -235,14 +258,35 @@ export function MarkdownResourceEditor({
     setErrorMessage(null);
 
     try {
-      await onSave(value);
+      // Read directly from Monaco editor model(s) to get current content.
+      // For split view, reconstruct from both editors.
+      // This ensures we save what the user sees, even after programmatic changes.
+      let currentContent: string;
+      if (activeSection === 'split') {
+        // In split mode, we have two editors - need to get content from both
+        // The frontmatter editor is the first one registered
+        const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
+        const fmEditor = editors[0];
+        const bodyEditor = editors[1];
+        const fmContent = fmEditor?.getValue?.() ?? parsed.frontmatter;
+        const bodyContent = bodyEditor?.getValue?.() ?? parsed.body;
+        currentContent = joinFrontmatter(fmContent, bodyContent);
+      } else if (activeSection === 'frontmatter') {
+        const editor = editorRef.current;
+        currentContent = editor?.getValue?.() ?? value;
+      } else {
+        const editor = editorRef.current;
+        currentContent = editor?.getValue?.() ?? value;
+      }
+
+      await onSave(currentContent);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (err) {
       setSaveStatus('error');
       setErrorMessage(err instanceof Error ? err.message : 'Save failed');
     }
-  }, [value, frontmatterError, onSave]);
+  }, [value, frontmatterError, onSave, activeSection, parsed]);
 
   // Validate on content change
   useEffect(() => {
@@ -285,6 +329,105 @@ export function MarkdownResourceEditor({
   }, [arn, value, frontmatterError, validateContent]);
 
   const canSave = !frontmatterError && onSave && saveStatus !== 'saving';
+
+  // Stable ready promise for tests — resolved when Monaco editor model is available.
+  const modelReadyRef = useRef<Promise<void>>(Promise.resolve());
+  const resolveModelReadyRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    // Create a new promise each time (in case of remount scenarios).
+    modelReadyRef.current = new Promise<void>(resolve => { resolveModelReadyRef.current = resolve; });
+
+    // If Monaco already mounted before this useEffect ran (onMount fires before useEffect),
+    // resolve immediately so tests don't hang.
+    if (editorRef.current) {
+      resolveModelReadyRef.current?.();
+    }
+
+    const globalWindow = window as typeof window & {
+      __AW_MONACO_TEST__?: {
+        markdownEditors?: Record<string, {
+          setValue: (next: string) => void;
+          getValue: () => string;
+          getFrontmatter: () => string;
+          getBody: () => string;
+          setSection: (section: 'frontmatter' | 'body' | 'split') => void;
+          save: () => Promise<void>;
+          canSave: () => boolean;
+          getError: () => string | null;
+          /** Resolves when Monaco editor model is ready. */
+          ready: Promise<void>;
+        }>;
+      };
+    };
+
+    globalWindow.__AW_MONACO_TEST__ ??= {};
+    globalWindow.__AW_MONACO_TEST__.markdownEditors ??= {};
+    globalWindow.__AW_MONACO_TEST__.markdownEditors[arn] = {
+      setValue: (next: string) => {
+        // Update React state (triggers re-render for controlled prop update)
+        applyCombinedValue(next);
+
+        // Also update Monaco models directly so save() reads correct content.
+        // handleSave() reads from Monaco editors, not React state.
+        // Without direct model update, Monaco models retain stale content.
+        const nextParsed = splitFrontmatter(next);
+        if (activeSection === 'split') {
+          // Update both editors - use window.monaco as fallback if editorRef not set
+          const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
+          const fmEditor = editorRef.current ?? editors[0];
+          const bodyEditor = editors[1];
+          fmEditor?.getModel?.()?.setValue(nextParsed.frontmatter);
+          bodyEditor?.getModel?.()?.setValue(nextParsed.body);
+        } else {
+          let editor = editorRef.current;
+          if (!editor) {
+            const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
+            editor = editors[activeSection === 'frontmatter' ? 0 : 1];
+          }
+          const content = activeSection === 'frontmatter' ? nextParsed.frontmatter : nextParsed.body;
+          editor?.getModel?.()?.setValue(content);
+        }
+      },
+      // Read directly from Monaco model(s) — source of truth for displayed content.
+      // React state `value` lags after programmatic setValue calls.
+      getValue: () => {
+        const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
+        if (editors.length === 0) return value;
+        if (editors.length >= 2) {
+          // Split view: reconstruct with --- markers
+          const fmContent = editors[0]?.getModel?.()?.getValue?.() ?? '';
+          const bodyContent = editors[1]?.getModel?.()?.getValue?.() ?? '';
+          return joinFrontmatter(fmContent, bodyContent);
+        }
+        // Single editor
+        return editors[0]?.getModel?.()?.getValue?.() ?? value;
+      },
+      getFrontmatter: () => {
+        const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
+        if (editors.length >= 1) {
+          return editors[0]?.getModel?.()?.getValue?.() ?? splitFrontmatter(value).frontmatter;
+        }
+        return splitFrontmatter(value).frontmatter;
+      },
+      getBody: () => {
+        const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
+        if (editors.length >= 2) {
+          return editors[1]?.getModel?.()?.getValue?.() ?? splitFrontmatter(value).body;
+        }
+        return splitFrontmatter(value).body;
+      },
+      setSection: (section) => setActiveSection(section),
+      save: () => handleSave(),
+      canSave: () => Boolean(canSave),
+      getError: () => frontmatterError ?? errorMessage,
+      ready: modelReadyRef.current,
+    };
+
+    return () => {
+      delete globalWindow.__AW_MONACO_TEST__?.markdownEditors?.[arn];
+    };
+  }, [applyCombinedValue, arn, canSave, errorMessage, frontmatterError, handleSave, value]);
 
   return (
     <div className="flex flex-col h-full">

@@ -84,15 +84,17 @@ impl AppState {
     /// Returns None if the ARN doesn't map to a file path
     pub fn get_content_path(&self, arn: &str) -> Option<PathBuf> {
         // ARN format: arn:local:{scope}:{type}/{name}
-        // Example: arn:local:global:workflow/my-workflow
-        let parts: Vec<&str> = arn.split(':').collect();
-        if parts.len() < 6 {
+        // Examples:
+        //   arn:local:global:workflow/my-workflow
+        //   arn:local:workspace/abc123:agent/orchestrator
+        let parts: Vec<&str> = arn.splitn(4, ':').collect();
+        if parts.len() != 4 || parts[0] != "arn" || parts[1] != "local" {
             return None;
         }
 
-        let scope = parts[2]; // "global" or "workspace/{id}"
-        let resource_type = parts[3];
-        let name = parts[4..].join("/"); // Name may contain colons
+        let scope = parts[2];
+        let resource = parts[3];
+        let (resource_type, name) = resource.split_once('/')?;
 
         let base_dir = if scope == "global" {
             self.workspace_root.join("global")
@@ -275,9 +277,9 @@ impl AppState {
             Ok(n) => Ok(n),
             Err(e) => {
                 if matches!(e, registry::domain::RegistryError::DuplicateNode(_)) {
-                    return Err(e.to_string());
+                    return self.registry.node_service.update(node).map_err(|e| e.to_string());
                 }
-                self.registry.node_service.update(node).map_err(|e| e.to_string())
+                Err(e.to_string())
             }
         }
     }

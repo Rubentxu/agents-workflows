@@ -122,7 +122,12 @@ export function ResourceCatalogPage({
       setResources(
         result.map((r: unknown) => {
           const node = r as RegistryNode;
-          return { id: node.id, name: node.name, namespace: node.namespace };
+          // MCP returns { arn, name, scope } but RegistryNode expects { id, name, namespace }
+          return {
+            id: node.id || (node as any).arn || '',
+            name: node.name,
+            namespace: node.namespace || (node as any).scope || '',
+          };
         })
       );
     } catch (err) {

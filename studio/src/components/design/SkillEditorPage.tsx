@@ -2,7 +2,7 @@
  * SkillEditorPage — /studio/projects/:projectId/design/skills/:skillId/editor
  * Full-page skill editor with Monaco as the single editing surface (ADR-0016).
  * All edits happen directly in Monaco; no form tabs.
- * Uses MarkdownResourceEditor for YAML frontmatter + Markdown body.
+ * Uses MarkdownResourceEditor with UnifiedEditor shell for YAML frontmatter + Markdown body.
  */
 
 import { useCallback, useEffect, useState, useRef } from 'react';
@@ -20,16 +20,48 @@ export function SkillEditorPage() {
   const { fetchContent, updateContent, validateContent } = useContent();
 
   const isNew = !skillId || skillId === 'new';
-  const scope = 'global';
+  // When editing, skillId is the full ARN (URL-encoded) passed from the catalog.
+  // When creating, we construct a new ARN.
   const arn = isNew
-    ? `arn:local:${scope}:skill/new`
-    : `arn:local:${scope}:skill/${skillId}`;
+    ? `arn:local:global:skill/new`
+    : decodeURIComponent(skillId);
+
+  const defaultContent = isNew
+    ? `---
+apiVersion: workflows.local/v1
+kind: Skill
+metadata:
+  name: new-skill
+  scope: global
+spec:
+  description: ""
+  triggers:
+    - example trigger
+  instructions: |
+    Write your skill instructions here.
+---
+
+# New Skill
+
+Describe what this skill does, how it works, and when to use it.
+
+## Inputs
+- \`input_name\` (string): Description of the input.
+
+## Outputs
+- \`output_name\` (string): Description of the output.
+
+## Instructions
+
+Write the skill instructions here. Be specific about the expected behavior, edge cases, and error handling.
+`
+    : '';
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [markdownContent, setMarkdownContent] = useState('');
-  const [originalContent, setOriginalContent] = useState('');
+  const [markdownContent, setMarkdownContent] = useState(defaultContent);
+  const [originalContent, setOriginalContent] = useState(defaultContent);
   // Ref to Monaco editor instance — used to read fresh content on save, avoiding stale React state
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
@@ -76,11 +108,9 @@ export function SkillEditorPage() {
 
     try {
       // Read fresh content directly from Monaco model(s) to avoid stale React state.
-      // For split view, reconstruct from both editors; for single view, use the active editor.
       const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
       let content: string;
       if (editors.length >= 2) {
-        // Split view: reconstruct with --- markers
         const fmContent = editors[0]?.getModel?.()?.getValue?.() ?? '';
         const bodyContent = editors[1]?.getModel?.()?.getValue?.() ?? '';
         content = `---\n${fmContent}\n---\n${bodyContent}`;
@@ -106,7 +136,6 @@ export function SkillEditorPage() {
       if (!success) {
         throw new Error('Failed to save skill content');
       }
-      // Read the actual content that was saved (may differ from input due to transform)
       const savedContent = editors.length >= 2
         ? `---\n${editors[0]?.getModel?.()?.getValue?.() ?? ''}\n---\n${editors[1]?.getModel?.()?.getValue?.() ?? ''}`
         : content;
@@ -149,14 +178,17 @@ export function SkillEditorPage() {
         backPath={`/studio/projects/${projectId}/design/skills`}
         resourceName={isNew ? 'New Skill' : 'Skill'}
         isNew={isNew}
+        arn={arn}
         onSave={handleSave}
         saving={saving}
         error={error}
         isDirty={isDirty}
       >
-        <div className="h-full min-h-[500px]">
+        <div className="flex-1 min-h-0 flex flex-col">
           <MarkdownResourceEditor
             arn={arn}
+            cardTitle="Skill Definition"
+            cardBadge="YAML + Markdown"
             initialValue={markdownContent}
             onChange={(value) => setMarkdownContent(value)}
             editorRef={editorRef}

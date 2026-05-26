@@ -12,3 +12,6 @@ export type { ResourceYamlEditorProps } from './ResourceYamlEditor';
 
 export { MarkdownResourceEditor } from './MarkdownResourceEditor';
 export type { MarkdownResourceEditorProps } from './MarkdownResourceEditor';
+
+export { UnifiedEditor } from './UnifiedEditor';
+export type { UnifiedEditorProps, EditorStatus } from './UnifiedEditor';

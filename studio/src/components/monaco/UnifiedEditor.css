@@ -1,0 +1,254 @@
+/* ─── UnifiedEditor — Dark shell for dual Monaco editors ─────────── */
+
+.unified-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  border-radius: 16px;
+  border: 1px solid var(--color-outline-variant, #E2E8F0);
+  background: var(--color-surface, #FFFFFF);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 32px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+  min-height: 480px;
+}
+
+/* ── Card Header ─────────────────────────────────────────────── */
+
+.unified-editor__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 56px;
+  border-bottom: 1px solid var(--color-outline-variant, #E2E8F0);
+  background: var(--color-surface, #FFFFFF);
+  flex-shrink: 0;
+}
+
+.unified-editor__header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.unified-editor__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-on-surface, #0F172A);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.unified-editor__badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--color-surface-container, #F1F5F9);
+  color: var(--color-secondary, #64748B);
+  border: 1px solid var(--color-outline-variant, #E2E8F0);
+  white-space: nowrap;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────── */
+
+.unified-editor__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.unified-editor__toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-on-surface, #374151);
+  background: var(--color-surface, #FFFFFF);
+  border: 1px solid var(--color-outline-variant, #E2E8F0);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+  line-height: 1;
+  height: 30px;
+}
+
+.unified-editor__toolbar-btn:hover {
+  background: var(--color-surface-container, #F1F5F9);
+  border-color: var(--color-outline, #CBD5E1);
+}
+
+.unified-editor__toolbar-btn:active {
+  background: var(--color-surface-container-high, #E2E8F0);
+}
+
+/* ── Dark Editor Frame ───────────────────────────────────────── */
+
+.unified-editor__frame {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: #111827;
+  overflow: hidden;
+}
+
+/* ── Section Labels ──────────────────────────────────────────── */
+
+.unified-editor__section-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 16px 0 56px; /* left padding aligns with Monaco line numbers gutter */
+  font-size: 12px;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  user-select: none;
+  flex-shrink: 0;
+  background: rgba(15, 23, 42, 0.72);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.unified-editor__section-label-primary {
+  color: #9CA3AF;
+  font-weight: 600;
+}
+
+.unified-editor__section-label-secondary {
+  color: #6B7280;
+  font-weight: 400;
+}
+
+/* ── Editor Sections ─────────────────────────────────────────── */
+
+.unified-editor__section {
+  overflow: hidden;
+  position: relative;
+  background: #111827;
+}
+
+.unified-editor__section--frontmatter {
+  height: 140px; /* initial default, resized by auto-height + drag */
+  flex-shrink: 0;
+  min-height: 60px;
+  max-height: 45vh;
+}
+
+.unified-editor__section--body {
+  flex: 1;
+  min-height: 80px;
+}
+
+.unified-editor__section--single {
+  flex: 1;
+  min-height: 80px;
+}
+
+/* ── Resize Handle ───────────────────────────────────────────── */
+
+.unified-editor__resize-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 8px;
+  flex-shrink: 0;
+  cursor: row-resize;
+  position: relative;
+  z-index: 10;
+  background: #1F2937;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.10);
+}
+
+.unified-editor__resize-handle::before {
+  content: '';
+  width: 24px;
+  height: 3px;
+  border-radius: 999px;
+  background: #64748B;
+  opacity: 0.65;
+  position: absolute;
+}
+
+.unified-editor__resize-handle:hover::before,
+.unified-editor__resize-handle:active::before {
+  background: #94A3B8;
+  opacity: 1;
+}
+
+/* ── Status Bar ──────────────────────────────────────────────── */
+
+.unified-editor__statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  height: 28px;
+  background: #111827;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  font-size: 12px;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  color: #9CA3AF;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.unified-editor__statusbar-left,
+.unified-editor__statusbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unified-editor__statusbar-separator {
+  color: #4B5563;
+}
+
+.unified-editor__statusbar-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.unified-editor__statusbar-item--success {
+  color: #34D399;
+}
+
+.unified-editor__statusbar-item--error {
+  color: #F87171;
+}
+
+/* ── Responsive adjustments ──────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .unified-editor {
+    border-radius: 8px;
+    min-height: 400px;
+  }
+
+  .unified-editor__section-label {
+    padding-left: 40px;
+    height: 24px;
+  }
+
+  .unified-editor__toolbar {
+    gap: 2px;
+  }
+
+  .unified-editor__toolbar-btn {
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+
+  .unified-editor__header {
+    padding: 10px 12px;
+    height: auto;
+  }
+}

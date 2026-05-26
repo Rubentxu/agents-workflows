@@ -18,16 +18,33 @@ export function ToolEditorPage() {
   const { fetchContent, updateContent, validateContent } = useContent();
 
   const isNew = !toolId || toolId === 'new';
-  const scope = 'global';
+  // When editing, toolId is the full ARN (URL-encoded) passed from the catalog.
+  // When creating, we construct a new ARN with project scope.
   const arn = isNew
-    ? `arn:local:${scope}:tool/new`
-    : `arn:local:${scope}:tool/${toolId}`;
+    ? `arn:local:project/${projectId}:tool/new`
+    : decodeURIComponent(toolId);
+
+  const defaultYaml = isNew
+    ? `apiVersion: workflows.local/v1
+kind: Tool
+metadata:
+  name: new-tool
+  scope: project/${projectId}
+spec:
+  description: ""
+  capabilities: []
+  input_schema:
+    type: object
+    properties: {}
+    required: []
+`
+    : '';
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [yamlContent, setYamlContent] = useState('');
-  const [originalContent, setOriginalContent] = useState('');
+  const [yamlContent, setYamlContent] = useState(defaultYaml);
+  const [originalContent, setOriginalContent] = useState(defaultYaml);
   // Ref to Monaco editor instance — used to read fresh content on save, avoiding stale React state
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
@@ -134,9 +151,11 @@ export function ToolEditorPage() {
         error={error}
         isDirty={isDirty}
       >
-        <div className="h-full min-h-[500px]">
+        <div className="flex-1 min-h-[500px] flex flex-col">
           <ResourceYamlEditor
             arn={arn}
+            cardTitle="Tool Definition"
+            cardBadge="YAML Configuration"
             initialValue={yamlContent}
             onChange={(value) => setYamlContent(value)}
             editorRef={editorRef}

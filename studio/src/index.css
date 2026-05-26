@@ -4,6 +4,7 @@
 @import "./styles/layout.css";
 @import "./styles/accessibility.css";
 @import "./components/primitives/primitives.css";
+@import "./components/monaco/UnifiedEditor.css";
 
 @theme {
   --color-primary: var(--color-primary);

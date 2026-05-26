@@ -1,6 +1,6 @@
 /**
  * MarkdownResourceEditor — Monaco-based editor for skill, prompt, and template resources.
- * Features split view for frontmatter (YAML) and body (Markdown), or unified editing.
+ * Uses UnifiedEditor shell for a single visual editing experience with YAML frontmatter + Markdown body.
  *
  * Usage:
  *   <MarkdownResourceEditor
@@ -13,13 +13,18 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
-import { configureMonacoYaml } from 'monaco-yaml';
+
 import type * as Monaco from 'monaco-editor';
 import { useContent } from '@/hooks/useContent';
-import { useSchema, type ResourceType } from '@/hooks/useSchema';
+import { UnifiedEditor } from './UnifiedEditor';
+import type { EditorStatus } from './UnifiedEditor';
 
 export interface MarkdownResourceEditorProps {
   arn: string;
+  /** Display title for the editor card header */
+  cardTitle?: string;
+  /** Badge text (e.g. "YAML + Markdown") */
+  cardBadge?: string;
   initialValue?: string;
   onChange?: (value: string) => void;
   onSave?: (value: string) => Promise<void>;
@@ -33,16 +38,6 @@ interface FrontmatterResult {
   frontmatter: string;
   body: string;
   error?: string;
-}
-
-function arnToResourceType(arn: string): ResourceType | null {
-  const match = arn.match(/^arn:local:[^:]+:([^/]+)\//);
-  if (!match) return null;
-  const type = match[1];
-  if (type === 'skill') return 'skill';
-  if (type === 'prompt') return 'prompt';
-  if (type === 'template') return 'template';
-  return null;
 }
 
 function splitFrontmatter(content: string): FrontmatterResult {
@@ -113,6 +108,8 @@ function formatToLanguage(format: string | null): string {
 
 export function MarkdownResourceEditor({
   arn,
+  cardTitle = 'Resource Definition',
+  cardBadge = 'YAML + Markdown',
   initialValue = '',
   onChange,
   onSave,
@@ -124,34 +121,80 @@ export function MarkdownResourceEditor({
   const [frontmatterError, setFrontmatterError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'frontmatter' | 'body' | 'split'>('split');
-
   // Body language is derived from the format field in frontmatter (for templates)
   const [bodyLanguage, setBodyLanguage] = useState<string>('markdown');
 
+  // Cursor status for each editor
+  const [fmStatus, setFmStatus] = useState<EditorStatus>({ language: 'yaml', line: 1, column: 1 });
+  const [bodyStatusState, setBodyStatus] = useState<EditorStatus>({ language: 'markdown', line: 1, column: 1 });
+
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof Monaco | null>(null);
-  const configuredRef = useRef(false);
 
-  const { validateContent } = useContent();
-  const { fetchSchema, loading: schemaLoading } = useSchema();
-  const [schema, setSchema] = useState<object | null>(null);
+  // hold editor references for ResizeObserver-based layout
+  const editorRefArray = useRef<(Monaco.editor.IStandaloneCodeEditor | null)[]>([null, null]);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-  const resourceType = arnToResourceType(arn);
+  const fmEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const bodyEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
-  // Fetch schema for frontmatter validation
-  useEffect(() => {
-    if (resourceType && !schemaLoading) {
-      fetchSchema(resourceType).then((s) => {
-        if (s) {
-          setSchema(s);
-        }
-      });
-    }
-  }, [resourceType, schemaLoading, fetchSchema]);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const parsed = splitFrontmatter(value);
 
+  const { validateContent } = useContent();
+
+  // ── ResizeObserver: layout all editors when container resizes ──
+  const ensureEditorLayout = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    editorRefArray.current.forEach((ed) => { try { ed?.layout(); } catch {} });
+
+    resizeObserverRef.current?.disconnect();
+    const observer = new ResizeObserver(() => {
+      editorRefArray.current.forEach((ed) => { try { ed?.layout(); } catch {} });
+    });
+    observer.observe(container);
+    resizeObserverRef.current = observer;
+  }, []);
+
+  // ── Auto-height frontmatter ──────────────────────────────────
+  useEffect(() => {
+    const editor = fmEditorRef.current;
+    const frame = containerRef.current?.querySelector<HTMLElement>('[data-section="frontmatter"]');
+    if (!editor || !frame) return;
+
+    const model = editor.getModel();
+    if (!model) return;
+    const lineHeight = 20;
+    const lineCount = model.getLineCount();
+    const newHeight = Math.max(60, Math.min(lineCount * lineHeight + 16, window.innerHeight * 0.45));
+    frame.style.height = `${newHeight}px`;
+    frame.style.flex = 'none';
+    requestAnimationFrame(() => editor.layout());
+  }, [parsed.frontmatter]);
+
+  // ── Cursor position tracking ─────────────────────────────────
+  const trackCursorPosition = useCallback(
+    (editor: Monaco.editor.IStandaloneCodeEditor, which: 'frontmatter' | 'body') => {
+      editor.onDidChangeCursorPosition((e) => {
+        const status: EditorStatus = {
+          language: which === 'frontmatter' ? 'yaml' : bodyLanguage,
+          line: e.position.lineNumber,
+          column: e.position.column,
+        };
+        if (which === 'frontmatter') {
+          setFmStatus(status);
+        } else {
+          setBodyStatus(status);
+        }
+      });
+    },
+    [bodyLanguage],
+  );
+
+  // ── Content change handler ───────────────────────────────────
   const applyCombinedValue = useCallback(
     (nextContent: string) => {
       setValue(nextContent);
@@ -163,53 +206,48 @@ export function MarkdownResourceEditor({
       }
       onChange?.(nextContent);
     },
-    [onChange]
+    [onChange],
   );
 
   useEffect(() => {
     setFrontmatterError(parsed.error ?? null);
   }, [parsed.error]);
 
+  // ── Editor mount handlers ────────────────────────────────────
   const handleFrontmatterMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
+    editorRefArray.current[0] = editor;
+    editorRefArray.current[1] = bodyEditorRef.current;
     monacoRef.current = monaco;
+    fmEditorRef.current = editor;
 
-    // Forward to external ref if provided (for parent component save coordination)
+    requestAnimationFrame(() => { editor.layout(); });
+    ensureEditorLayout();
+
+    // Track cursor
+    trackCursorPosition(editor, 'frontmatter');
+
+    // Forward to external ref if provided
     if (externalEditorRef) {
       (externalEditorRef as React.MutableRefObject<Monaco.editor.IStandaloneCodeEditor | null>).current = editor;
     }
 
     // Signal that Monaco model is now ready for test bridge operations.
     resolveModelReadyRef.current?.();
-
-    if (!configuredRef.current) {
-      configuredRef.current = true;
-
-      configureMonacoYaml(monaco, {
-        enableSchemaRequest: false,
-        format: {
-          enable: true,
-          bracketSpacing: true,
-        },
-        validate: true,
-        schemas: schema
-          ? [
-              {
-                uri: 'https://schemas.workflows.local/resource.json',
-                fileMatch: ['*'],
-                schema: schema,
-              },
-            ]
-          : [],
-      });
-    }
-  }, [schema, externalEditorRef]);
+  }, [externalEditorRef, ensureEditorLayout, trackCursorPosition]);
 
   const handleBodyMount: OnMount = useCallback((editor, monaco) => {
-    editorRef.current = editor;
+    bodyEditorRef.current = editor;
+    editorRefArray.current[1] = editor;
     monacoRef.current = monaco;
 
-    // Forward to external ref if provided (body editor is secondary but still exposed)
+    requestAnimationFrame(() => { editor.layout(); });
+    ensureEditorLayout();
+
+    // Track cursor
+    trackCursorPosition(editor, 'body');
+
+    // Forward to external ref if provided
     if (externalEditorRef) {
       (externalEditorRef as React.MutableRefObject<Monaco.editor.IStandaloneCodeEditor | null>).current = editor;
     }
@@ -231,15 +269,16 @@ export function MarkdownResourceEditor({
         { open: '---', close: '---' },
       ],
     });
-  }, [externalEditorRef]);
+  }, [externalEditorRef, ensureEditorLayout, trackCursorPosition]);
 
+  // ── Change handlers ──────────────────────────────────────────
   const handleFrontmatterChange = useCallback(
     (newValue: string | undefined) => {
       const fm = newValue ?? '';
       const newContent = joinFrontmatter(fm, parsed.body);
       applyCombinedValue(newContent);
     },
-    [applyCombinedValue, parsed.body]
+    [applyCombinedValue, parsed.body],
   );
 
   const handleBodyChange = useCallback(
@@ -248,9 +287,10 @@ export function MarkdownResourceEditor({
       const newContent = joinFrontmatter(parsed.frontmatter, body);
       applyCombinedValue(newContent);
     },
-    [applyCombinedValue, parsed.frontmatter]
+    [applyCombinedValue, parsed.frontmatter],
   );
 
+  // ── Save handler ─────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (frontmatterError || !onSave) return;
 
@@ -258,26 +298,12 @@ export function MarkdownResourceEditor({
     setErrorMessage(null);
 
     try {
-      // Read directly from Monaco editor model(s) to get current content.
-      // For split view, reconstruct from both editors.
-      // This ensures we save what the user sees, even after programmatic changes.
-      let currentContent: string;
-      if (activeSection === 'split') {
-        // In split mode, we have two editors - need to get content from both
-        // The frontmatter editor is the first one registered
-        const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
-        const fmEditor = editors[0];
-        const bodyEditor = editors[1];
-        const fmContent = fmEditor?.getValue?.() ?? parsed.frontmatter;
-        const bodyContent = bodyEditor?.getValue?.() ?? parsed.body;
-        currentContent = joinFrontmatter(fmContent, bodyContent);
-      } else if (activeSection === 'frontmatter') {
-        const editor = editorRef.current;
-        currentContent = editor?.getValue?.() ?? value;
-      } else {
-        const editor = editorRef.current;
-        currentContent = editor?.getValue?.() ?? value;
-      }
+      const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
+      const fmEditor = fmEditorRef.current ?? editors[0];
+      const bodyEditor = bodyEditorRef.current ?? editors[1];
+      const fmContent = fmEditor?.getModel?.()?.getValue?.() ?? parsed.frontmatter;
+      const bodyContent = bodyEditor?.getModel?.()?.getValue?.() ?? parsed.body;
+      const currentContent = joinFrontmatter(fmContent, bodyContent);
 
       await onSave(currentContent);
       setSaveStatus('saved');
@@ -286,9 +312,9 @@ export function MarkdownResourceEditor({
       setSaveStatus('error');
       setErrorMessage(err instanceof Error ? err.message : 'Save failed');
     }
-  }, [value, frontmatterError, onSave, activeSection, parsed]);
+  }, [frontmatterError, onSave, parsed]);
 
-  // Validate on content change
+  // ── Validation ───────────────────────────────────────────────
   useEffect(() => {
     if (!validateContent || frontmatterError || !editorRef.current || !monacoRef.current) return;
 
@@ -319,7 +345,6 @@ export function MarkdownResourceEditor({
           setErrorMessage(errors[0].message);
         }
       } else {
-        // Clear markers on success
         monaco.editor.setModelMarkers(model, 'validation', []);
         setErrorMessage(null);
       }
@@ -330,16 +355,13 @@ export function MarkdownResourceEditor({
 
   const canSave = !frontmatterError && onSave && saveStatus !== 'saving';
 
-  // Stable ready promise for tests — resolved when Monaco editor model is available.
+  // ── Test bridge ──────────────────────────────────────────────
   const modelReadyRef = useRef<Promise<void>>(Promise.resolve());
   const resolveModelReadyRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    // Create a new promise each time (in case of remount scenarios).
     modelReadyRef.current = new Promise<void>(resolve => { resolveModelReadyRef.current = resolve; });
 
-    // If Monaco already mounted before this useEffect ran (onMount fires before useEffect),
-    // resolve immediately so tests don't hang.
     if (editorRef.current) {
       resolveModelReadyRef.current?.();
     }
@@ -351,11 +373,9 @@ export function MarkdownResourceEditor({
           getValue: () => string;
           getFrontmatter: () => string;
           getBody: () => string;
-          setSection: (section: 'frontmatter' | 'body' | 'split') => void;
           save: () => Promise<void>;
           canSave: () => boolean;
           getError: () => string | null;
-          /** Resolves when Monaco editor model is ready. */
           ready: Promise<void>;
         }>;
       };
@@ -365,42 +385,22 @@ export function MarkdownResourceEditor({
     globalWindow.__AW_MONACO_TEST__.markdownEditors ??= {};
     globalWindow.__AW_MONACO_TEST__.markdownEditors[arn] = {
       setValue: (next: string) => {
-        // Update React state (triggers re-render for controlled prop update)
         applyCombinedValue(next);
-
-        // Also update Monaco models directly so save() reads correct content.
-        // handleSave() reads from Monaco editors, not React state.
-        // Without direct model update, Monaco models retain stale content.
         const nextParsed = splitFrontmatter(next);
-        if (activeSection === 'split') {
-          // Update both editors - use window.monaco as fallback if editorRef not set
-          const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
-          const fmEditor = editorRef.current ?? editors[0];
-          const bodyEditor = editors[1];
-          fmEditor?.getModel?.()?.setValue(nextParsed.frontmatter);
-          bodyEditor?.getModel?.()?.setValue(nextParsed.body);
-        } else {
-          let editor = editorRef.current;
-          if (!editor) {
-            const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
-            editor = editors[activeSection === 'frontmatter' ? 0 : 1];
-          }
-          const content = activeSection === 'frontmatter' ? nextParsed.frontmatter : nextParsed.body;
-          editor?.getModel?.()?.setValue(content);
-        }
+        const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
+        const fmEditor = fmEditorRef.current ?? editors[0];
+        const bodyEditor = bodyEditorRef.current ?? editors[1];
+        fmEditor?.getModel?.()?.setValue(nextParsed.frontmatter);
+        bodyEditor?.getModel?.()?.setValue(nextParsed.body);
       },
-      // Read directly from Monaco model(s) — source of truth for displayed content.
-      // React state `value` lags after programmatic setValue calls.
       getValue: () => {
         const editors = (window as any).monaco?.editor?.getEditors?.() ?? [];
         if (editors.length === 0) return value;
         if (editors.length >= 2) {
-          // Split view: reconstruct with --- markers
           const fmContent = editors[0]?.getModel?.()?.getValue?.() ?? '';
           const bodyContent = editors[1]?.getModel?.()?.getValue?.() ?? '';
           return joinFrontmatter(fmContent, bodyContent);
         }
-        // Single editor
         return editors[0]?.getModel?.()?.getValue?.() ?? value;
       },
       getFrontmatter: () => {
@@ -417,7 +417,6 @@ export function MarkdownResourceEditor({
         }
         return splitFrontmatter(value).body;
       },
-      setSection: (section) => setActiveSection(section),
       save: async () => { await handleSave(); },
       canSave: () => Boolean(canSave),
       getError: () => frontmatterError ?? errorMessage,
@@ -426,74 +425,44 @@ export function MarkdownResourceEditor({
 
     return () => {
       delete globalWindow.__AW_MONACO_TEST__?.markdownEditors?.[arn];
+      resizeObserverRef.current?.disconnect();
     };
   }, [applyCombinedValue, arn, canSave, errorMessage, frontmatterError, handleSave, value]);
 
+  // ── Shared Monaco options ────────────────────────────────────
+  const baseOptions = {
+    readOnly,
+    minimap: { enabled: false },
+    fontSize: 13,
+    fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
+    lineNumbers: 'on' as const,
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+    tabSize: 2,
+    wordWrap: 'on' as const,
+    folding: false,
+    padding: { top: 4, bottom: 4 },
+    scrollbar: {
+      vertical: 'hidden' as const,
+      horizontal: 'hidden' as const,
+    },
+    overviewRulerLanes: 0,
+    hideCursorInOverviewRuler: true,
+    overviewRulerBorder: false,
+    renderLineHighlight: 'none' as const,
+    contextmenu: false,
+  };
+
+  const combinedError = frontmatterError ?? errorMessage;
+
+  // ── Render ───────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-outline-variant bg-surface-container/30">
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-secondary font-mono">{arn}</span>
-          {frontmatterError && (
-            <span className="text-[10px] text-error">• {frontmatterError}</span>
-          )}
-          {errorMessage && !frontmatterError && (
-            <span className="text-[10px] text-warning">• {errorMessage}</span>
-          )}
-          {saveStatus === 'saved' && (
-            <span className="text-[10px] text-success">• Saved</span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* View mode toggle */}
-          <div className="flex items-center gap-1 bg-surface-container rounded p-0.5">
-            <button
-              onClick={() => setActiveSection('frontmatter')}
-              className={`px-2 py-1 text-[10px] rounded transition-colors ${
-                activeSection === 'frontmatter'
-                  ? 'bg-primary text-on-primary'
-                  : 'text-secondary hover:text-on-surface'
-              }`}
-            >
-              YAML
-            </button>
-            <button
-              onClick={() => setActiveSection('body')}
-              className={`px-2 py-1 text-[10px] rounded transition-colors ${
-                activeSection === 'body'
-                  ? 'bg-primary text-on-primary'
-                  : 'text-secondary hover:text-on-surface'
-              }`}
-            >
-              MD
-            </button>
-            <button
-              onClick={() => setActiveSection('split')}
-              className={`px-2 py-1 text-[10px] rounded transition-colors ${
-                activeSection === 'split'
-                  ? 'bg-primary text-on-primary'
-                  : 'text-secondary hover:text-on-surface'
-              }`}
-            >
-              Split
-            </button>
-          </div>
-
-          {onSave && (
-            <button
-              onClick={handleSave}
-              disabled={!canSave}
-              className="px-3 py-1 text-xs bg-primary text-on-primary rounded hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saveStatus === 'saving' ? 'Saving...' : 'Save'}
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-hidden">
-        {activeSection === 'frontmatter' && (
+    <div className="flex flex-col flex-1 min-h-0" ref={containerRef}>
+      <UnifiedEditor
+        title={cardTitle}
+        badge={cardBadge}
+        arn={arn}
+        frontmatterEditor={
           <Editor
             height="100%"
             language="yaml"
@@ -502,22 +471,12 @@ export function MarkdownResourceEditor({
             onChange={handleFrontmatterChange}
             onMount={handleFrontmatterMount}
             options={{
-              readOnly,
-              minimap: { enabled: false },
-              fontSize: 13,
-              fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
+              ...baseOptions,
               lineNumbers: 'on',
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              tabSize: 2,
-              wordWrap: 'on',
-              folding: false,
-              padding: { top: 8, bottom: 8 },
             }}
           />
-        )}
-
-        {activeSection === 'body' && (
+        }
+        bodyEditor={
           <Editor
             height="100%"
             language={bodyLanguage}
@@ -526,84 +485,27 @@ export function MarkdownResourceEditor({
             onChange={handleBodyChange}
             onMount={handleBodyMount}
             options={{
-              readOnly,
-              minimap: { enabled: false },
-              fontSize: 13,
-              fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
-              lineNumbers: 'off',
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              tabSize: 2,
-              wordWrap: 'on',
-              padding: { top: 8, bottom: 8 },
+              ...baseOptions,
+              lineNumbers: 'on',
             }}
           />
-        )}
-
-        {activeSection === 'split' && (
-          <div className="flex h-full">
-            <div className="w-1/2 border-r border-outline-variant">
-              <div className="h-full flex flex-col">
-                <div className="px-3 py-1 bg-surface-container/50 border-b border-outline-variant">
-                  <span className="text-[10px] text-secondary uppercase tracking-wider">Frontmatter (YAML)</span>
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <Editor
-                    height="100%"
-                    language="yaml"
-                    value={parsed.frontmatter}
-                    theme={theme}
-                    onChange={handleFrontmatterChange}
-                    onMount={handleFrontmatterMount}
-                    options={{
-                      readOnly,
-                      minimap: { enabled: false },
-                      fontSize: 12,
-                      fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
-                      lineNumbers: 'on',
-                      scrollBeyondLastLine: false,
-                      automaticLayout: true,
-                      tabSize: 2,
-                      wordWrap: 'on',
-                      folding: false,
-                      padding: { top: 4, bottom: 4 },
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="w-1/2">
-              <div className="h-full flex flex-col">
-                <div className="px-3 py-1 bg-surface-container/50 border-b border-outline-variant">
-                  <span className="text-[10px] text-secondary uppercase tracking-wider">Body ({bodyLanguage})</span>
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <Editor
-                    height="100%"
-                    language={bodyLanguage}
-                    value={parsed.body}
-                    theme={theme}
-                    onChange={handleBodyChange}
-                    onMount={handleBodyMount}
-                    options={{
-                      readOnly,
-                      minimap: { enabled: false },
-                      fontSize: 12,
-                      fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
-                      lineNumbers: 'off',
-                      scrollBeyondLastLine: false,
-                      automaticLayout: true,
-                      tabSize: 2,
-                      wordWrap: 'on',
-                      padding: { top: 4, bottom: 4 },
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+        }
+        frontmatterStatus={fmStatus}
+        bodyStatus={bodyStatusState}
+        error={combinedError}
+        saved={saveStatus === 'saved'}
+        onFormat={() => {
+          // Format both editors
+          const fmEd = fmEditorRef.current;
+          const bodyEd = bodyEditorRef.current;
+          if (fmEd) {
+            fmEd.getAction('editor.action.formatDocument')?.run();
+          }
+          if (bodyEd) {
+            bodyEd.getAction('editor.action.formatDocument')?.run();
+          }
+        }}
+      />
     </div>
   );
 }

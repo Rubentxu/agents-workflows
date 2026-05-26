@@ -20,16 +20,48 @@ export function PromptEditorPage() {
   const { fetchContent, updateContent, validateContent } = useContent();
 
   const isNew = !promptId || promptId === 'new';
-  const scope = 'global';
+  // When editing, promptId is the full ARN (URL-encoded) passed from the catalog.
+  // When creating, we construct a new ARN.
   const arn = isNew
-    ? `arn:local:${scope}:prompt/new`
-    : `arn:local:${scope}:prompt/${promptId}`;
+    ? `arn:local:global:prompt/new`
+    : decodeURIComponent(promptId);
+
+  const defaultContent = isNew
+    ? `---
+apiVersion: workflows.local/v1
+kind: Prompt
+metadata:
+  name: new-prompt
+  scope: global
+spec:
+  description: ""
+  template: |
+    You are a helpful assistant.
+---
+
+# New Prompt
+
+Describe the purpose of this prompt, when it should be used, and which agent or workflow consumes it.
+
+## Context
+
+Explain the expected context and inputs.
+
+## Instructions
+
+Write the prompt instructions here. Define the role, tone, and expected behavior.
+
+## Output Format
+
+Describe the expected output format and any constraints.
+`
+    : '';
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [markdownContent, setMarkdownContent] = useState('');
-  const [originalContent, setOriginalContent] = useState('');
+  const [markdownContent, setMarkdownContent] = useState(defaultContent);
+  const [originalContent, setOriginalContent] = useState(defaultContent);
   // Ref to Monaco editor instance — used to read fresh content on save, avoiding stale React state
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
@@ -149,14 +181,17 @@ export function PromptEditorPage() {
         backPath={`/studio/projects/${projectId}/design/prompts`}
         resourceName={isNew ? 'New Prompt' : 'Prompt'}
         isNew={isNew}
+        arn={arn}
         onSave={handleSave}
         saving={saving}
         error={error}
         isDirty={isDirty}
       >
-        <div className="h-full min-h-[500px]">
+        <div className="flex-1 min-h-0 flex flex-col">
           <MarkdownResourceEditor
             arn={arn}
+            cardTitle="Prompt Definition"
+            cardBadge="YAML + Markdown"
             initialValue={markdownContent}
             onChange={(value) => setMarkdownContent(value)}
             editorRef={editorRef}

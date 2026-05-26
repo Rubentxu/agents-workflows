@@ -20,15 +20,33 @@ export function AgentEditorPage() {
   const { fetchContent, updateContent, validateContent } = useContent();
 
   const isNew = !agentId || agentId === 'new';
+  // When editing, agentId is the full ARN (URL-encoded) passed from the catalog.
+  // When creating, we construct a new ARN with project scope.
   const arn = isNew
     ? `arn:local:project/${projectId}:agent/new`
-    : `arn:local:project/${projectId}:agent/${agentId}`;
+    : decodeURIComponent(agentId);
+
+  const defaultYaml = isNew
+    ? `apiVersion: workflows.local/v1
+kind: Agent
+metadata:
+  name: new-agent
+  scope: project/${projectId}
+spec:
+  description: ""
+  model: openai/gpt-4
+  skills: []
+  prompts: []
+  tools: []
+  temperature: 0.7
+`
+    : '';
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [yamlContent, setYamlContent] = useState('');
-  const [originalContent, setOriginalContent] = useState('');
+  const [yamlContent, setYamlContent] = useState(defaultYaml);
+  const [originalContent, setOriginalContent] = useState(defaultYaml);
   // Ref to Monaco editor instance — used to read fresh content on save, avoiding stale React state
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
@@ -153,9 +171,11 @@ export function AgentEditorPage() {
         onDelete={!isNew ? handleDelete : undefined}
         isDirty={isDirty}
       >
-        <div className="h-full min-h-[500px]">
+        <div className="flex-1 min-h-[500px] flex flex-col">
           <ResourceYamlEditor
             arn={arn}
+            cardTitle="Agent Definition"
+            cardBadge="YAML Configuration"
             initialValue={yamlContent}
             onChange={(value) => setYamlContent(value)}
             editorRef={editorRef}

@@ -20,16 +20,58 @@ export function TemplateEditorPage() {
   const { fetchContent, updateContent, validateContent } = useContent();
 
   const isNew = !templateId || templateId === 'new';
-  const scope = 'global';
+  // When editing, templateId is the full ARN (URL-encoded) passed from the catalog.
+  // When creating, we construct a new ARN.
   const arn = isNew
-    ? `arn:local:${scope}:template/new`
-    : `arn:local:${scope}:template/${templateId}`;
+    ? `arn:local:global:template/new`
+    : decodeURIComponent(templateId);
+
+  const defaultContent = isNew
+    ? `---
+apiVersion: workflows.local/v1
+kind: Template
+metadata:
+  name: new-template
+  scope: global
+spec:
+  description: ""
+  targetKind: Workflow
+  parameters:
+    - name: example
+      type: string
+      description: "Example parameter"
+      required: true
+  manifest:
+    apiVersion: workflows.local/v1
+    kind: Workflow
+    metadata:
+      name: "{{name}}"
+      scope: "{{scope}}"
+    spec:
+      stages: []
+---
+
+# New Template
+
+Describe what this template generates, which resources it creates, and when to use it.
+
+## Parameters
+
+- \`name\` (string, required): The name of the generated resource.
+- \`scope\` (string, required): The scope for the generated resource.
+- \`example\` (string, required): Example parameter description.
+
+## Usage
+
+Explain how to use this template and what outputs to expect.
+`
+    : '';
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [markdownContent, setMarkdownContent] = useState('');
-  const [originalContent, setOriginalContent] = useState('');
+  const [markdownContent, setMarkdownContent] = useState(defaultContent);
+  const [originalContent, setOriginalContent] = useState(defaultContent);
   // Ref to Monaco editor instance — used to read fresh content on save, avoiding stale React state
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
@@ -149,14 +191,17 @@ export function TemplateEditorPage() {
         backPath={`/studio/projects/${projectId}/design/templates`}
         resourceName={isNew ? 'New Template' : 'Template'}
         isNew={isNew}
+        arn={arn}
         onSave={handleSave}
         saving={saving}
         error={error}
         isDirty={isDirty}
       >
-        <div className="h-full min-h-[500px]">
+        <div className="flex-1 min-h-0 flex flex-col">
           <MarkdownResourceEditor
             arn={arn}
+            cardTitle="Template Definition"
+            cardBadge="YAML + Markdown"
             initialValue={markdownContent}
             onChange={(value) => setMarkdownContent(value)}
             editorRef={editorRef}

@@ -6,9 +6,11 @@
 
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import type * as Monaco from 'monaco-editor';
 import { useContent } from '@/hooks/useContent';
-import { EditorLayout } from './shared';
+import { useDirtyGuard } from '@/hooks/useDirtyGuard';
+import { EditorLayout, DirtyGuardDialog } from './shared';
 import { ResourceYamlEditor } from '@/components/monaco';
 
 export function ToolEditorPage() {
@@ -25,8 +27,13 @@ export function ToolEditorPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [yamlContent, setYamlContent] = useState('');
+  const [originalContent, setOriginalContent] = useState('');
   // Ref to Monaco editor instance — used to read fresh content on save, avoiding stale React state
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+
+  // Dirty guard: prevent data loss when navigating away with unsaved changes
+  const { isDirty, markClean, confirmNavigation, cancelNavigation, blockerState } =
+    useDirtyGuard(originalContent, yamlContent);
 
   // Load existing tool
   const fetchTool = useCallback(async () => {
@@ -44,6 +51,7 @@ export function ToolEditorPage() {
         throw new Error('Failed to load tool content');
       }
       setYamlContent(content);
+      setOriginalContent(content);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load tool');
     } finally {
@@ -82,8 +90,12 @@ export function ToolEditorPage() {
       if (!success) {
         throw new Error('Failed to save tool content');
       }
+      markClean(content);
+      toast.success('Tool saved');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save tool');
+      const msg = err instanceof Error ? err.message : 'Failed to save tool';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -101,26 +113,40 @@ export function ToolEditorPage() {
   }
 
   return (
-    <EditorLayout
-      backLabel="Tools"
-      backPath={`/studio/projects/${projectId}/design/tools`}
-      resourceName={isNew ? 'New Tool' : 'Tool'}
-      isNew={isNew}
-      onSave={handleSave}
-      saving={saving}
-      error={error}
-    >
-      <div className="h-full min-h-[500px]">
-        <ResourceYamlEditor
-          arn={arn}
-          initialValue={yamlContent}
-          onChange={(value) => setYamlContent(value)}
-          editorRef={editorRef}
-          onSave={async (value) => {
-            await updateContent(arn, value);
+    <>
+      {blockerState === 'blocked' && (
+        <DirtyGuardDialog
+          onStay={cancelNavigation}
+          onDiscard={confirmNavigation}
+          onSaveAndLeave={async () => {
+            await handleSave();
+            confirmNavigation();
           }}
         />
-      </div>
-    </EditorLayout>
+      )}
+      <EditorLayout
+        backLabel="Tools"
+        backPath={`/studio/projects/${projectId}/design/tools`}
+        resourceName={isNew ? 'New Tool' : 'Tool'}
+        isNew={isNew}
+        onSave={handleSave}
+        saving={saving}
+        error={error}
+        isDirty={isDirty}
+      >
+        <div className="h-full min-h-[500px]">
+          <ResourceYamlEditor
+            arn={arn}
+            initialValue={yamlContent}
+            onChange={(value) => setYamlContent(value)}
+            editorRef={editorRef}
+            onSave={async (value) => {
+              await updateContent(arn, value);
+              markClean(value);
+            }}
+          />
+        </div>
+      </EditorLayout>
+    </>
   );
 }

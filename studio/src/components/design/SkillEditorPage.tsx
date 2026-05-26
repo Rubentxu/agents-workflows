@@ -7,9 +7,11 @@
 
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import type * as Monaco from 'monaco-editor';
 import { useContent } from '@/hooks/useContent';
-import { EditorLayout } from './shared';
+import { useDirtyGuard } from '@/hooks/useDirtyGuard';
+import { EditorLayout, DirtyGuardDialog } from './shared';
 import { MarkdownResourceEditor } from '@/components/monaco';
 import { isYamlConfigFormat, yamlConfigToMarkdown, markdownToYamlConfig } from '@/lib/contentTransform';
 
@@ -27,8 +29,13 @@ export function SkillEditorPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [markdownContent, setMarkdownContent] = useState('');
+  const [originalContent, setOriginalContent] = useState('');
   // Ref to Monaco editor instance — used to read fresh content on save, avoiding stale React state
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+
+  // Dirty guard: prevent data loss when navigating away with unsaved changes
+  const { isDirty, markClean, confirmNavigation, cancelNavigation, blockerState } =
+    useDirtyGuard(originalContent, markdownContent);
 
   // Load existing skill
   const fetchSkill = useCallback(async () => {
@@ -50,6 +57,7 @@ export function SkillEditorPage() {
         ? yamlConfigToMarkdown(content)
         : content;
       setMarkdownContent(transformed);
+      setOriginalContent(transformed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load skill');
     } finally {
@@ -98,8 +106,16 @@ export function SkillEditorPage() {
       if (!success) {
         throw new Error('Failed to save skill content');
       }
+      // Read the actual content that was saved (may differ from input due to transform)
+      const savedContent = editors.length >= 2
+        ? `---\n${editors[0]?.getModel?.()?.getValue?.() ?? ''}\n---\n${editors[1]?.getModel?.()?.getValue?.() ?? ''}`
+        : content;
+      markClean(savedContent);
+      toast.success('Skill saved');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save skill');
+      const msg = err instanceof Error ? err.message : 'Failed to save skill';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -117,28 +133,42 @@ export function SkillEditorPage() {
   }
 
   return (
-    <EditorLayout
-      backLabel="Skills"
-      backPath={`/studio/projects/${projectId}/design/skills`}
-      resourceName={isNew ? 'New Skill' : 'Skill'}
-      isNew={isNew}
-      onSave={handleSave}
-      saving={saving}
-      error={error}
-    >
-      <div className="h-full min-h-[500px]">
-        <MarkdownResourceEditor
-          arn={arn}
-          initialValue={markdownContent}
-          onChange={(value) => setMarkdownContent(value)}
-          editorRef={editorRef}
-          onSave={async (value) => {
-            // Transform markdown format to YAML config before saving
-            const yamlConfig = markdownToYamlConfig(value, 'Skill');
-            await updateContent(arn, yamlConfig);
+    <>
+      {blockerState === 'blocked' && (
+        <DirtyGuardDialog
+          onStay={cancelNavigation}
+          onDiscard={confirmNavigation}
+          onSaveAndLeave={async () => {
+            await handleSave();
+            confirmNavigation();
           }}
         />
-      </div>
-    </EditorLayout>
+      )}
+      <EditorLayout
+        backLabel="Skills"
+        backPath={`/studio/projects/${projectId}/design/skills`}
+        resourceName={isNew ? 'New Skill' : 'Skill'}
+        isNew={isNew}
+        onSave={handleSave}
+        saving={saving}
+        error={error}
+        isDirty={isDirty}
+      >
+        <div className="h-full min-h-[500px]">
+          <MarkdownResourceEditor
+            arn={arn}
+            initialValue={markdownContent}
+            onChange={(value) => setMarkdownContent(value)}
+            editorRef={editorRef}
+            onSave={async (value) => {
+              // Transform markdown format to YAML config before saving
+              const yamlConfig = markdownToYamlConfig(value, 'Skill');
+              await updateContent(arn, yamlConfig);
+              markClean(value);
+            }}
+          />
+        </div>
+      </EditorLayout>
+    </>
   );
 }

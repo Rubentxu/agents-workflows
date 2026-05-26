@@ -20,3 +20,6 @@ export type { ToolMapEditorProps } from './ToolMapEditor';
 
 export { YamlPreview } from './YamlPreview';
 export type { YamlPreviewProps } from './YamlPreview';
+
+export { DirtyGuardDialog } from './DirtyGuardDialog';
+export type { DirtyGuardDialogProps } from './DirtyGuardDialog';

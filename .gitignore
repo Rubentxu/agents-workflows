@@ -45,4 +45,4 @@ Thumbs.db
 # SDD generated artifacts (HTML reports — regenerate by re-running phases)
 openspec/**/reports/
 openspec/**/state.yaml
-openspec/
+openspec/.atl/

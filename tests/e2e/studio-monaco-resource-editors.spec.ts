@@ -281,6 +281,8 @@ test.describe('Monaco YAML Editor — Agent', () => {
     expect(content).toContain('Updated E2E test agent');
 
     await saveYamlEditor(page, arn);
+    // Wait for content API to persist and re-index
+    await page.waitForTimeout(2000);
 
     // Verify via REST API
     const updated = await rest.getAgent(arn);
@@ -342,6 +344,8 @@ test.describe('Monaco YAML Editor — Tool', () => {
     await setYamlEditorValue(page, arn, TOOL_UPDATED_YAML);
 
     await saveYamlEditor(page, arn);
+    // Wait for content API to persist and re-index
+    await page.waitForTimeout(2000);
 
     // Verify persistence
     const updated = await rest.getTool(arn);

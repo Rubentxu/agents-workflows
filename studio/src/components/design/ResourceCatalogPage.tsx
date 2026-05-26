@@ -98,6 +98,15 @@ export function ResourceCatalogPage({
   const [resources, setResources] = useState<LocalResource[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filter resources by name or ID matching search query (case-insensitive)
+  const filteredResources = searchQuery
+    ? resources.filter((r) => {
+        const q = searchQuery.toLowerCase();
+        return r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q);
+      })
+    : resources;
 
   const [pendingDelete, setPendingDelete] = useState<{
     resource: LocalResource;
@@ -162,6 +171,14 @@ export function ResourceCatalogPage({
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <input
+            type="text"
+            placeholder={`Search ${resourceLabel.toLowerCase()}...`}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            data-testid={`${resourceKey}-catalog-search`}
+            className="px-3 py-1.5 text-sm border border-outline rounded bg-surface text-on-surface placeholder:text-secondary/50 focus:outline-none focus:border-primary w-48"
+          />
           <button
             onClick={fetchResources}
             disabled={loading}
@@ -194,19 +211,27 @@ export function ResourceCatalogPage({
           </div>
         )}
 
-        {loading && resources.length === 0 ? (
+        {!loading && searchQuery && filteredResources.length === 0 ? (
+          <EmptyState
+            icon={<span aria-hidden="true" className="text-lg">◫</span>}
+            title="No results"
+            description={`No ${resourceLabel.toLowerCase()} match "${searchQuery}"`}
+            action={{ label: 'Clear search', onClick: () => setSearchQuery('') }}
+            testId={`${resourceKey}-catalog-no-results`}
+          />
+        ) : loading && resources.length === 0 ? (
           <LoadingState type="rows" count={3} />
         ) : resources.length === 0 ? (
           <EmptyState
             icon={<span aria-hidden="true" className="text-lg">◫</span>}
-              title={emptyStateTitle ?? `No ${resourceLabel.toLowerCase()} found`}
-              description={emptyStateDescription ?? `Create your first ${resourceLabel.slice(0, -1).toLowerCase()} to get started.`}
-              action={{ label: `Create ${resourceLabel.slice(0, -1)}`, onClick: () => navigate(createPath) }}
-              testId={`${resourceKey}-catalog-empty-state`}
-            />
+            title={emptyStateTitle ?? `No ${resourceLabel.toLowerCase()} found`}
+            description={emptyStateDescription ?? `Create your first ${resourceLabel.slice(0, -1).toLowerCase()} to get started.`}
+            action={{ label: `Create ${resourceLabel.slice(0, -1)}`, onClick: () => navigate(createPath) }}
+            testId={`${resourceKey}-catalog-empty-state`}
+          />
         ) : (
           <div className="space-y-2" data-testid={`${resourceKey}-catalog-list`}>
-            {resources.map((resource) => (
+            {filteredResources.map((resource) => (
               <div
                 key={resource.id}
                 onClick={() => navigate(editorPath(resource.id))}

@@ -6,7 +6,7 @@
  * do not pass the tabs prop.
  */
 
-import { type ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { Button } from '@/components/primitives/Button';
 
 export interface EditorLayoutProps {
@@ -36,6 +36,8 @@ export interface EditorLayoutProps {
   activeTab?: string;
   /** Called when the user switches tabs */
   onTabChange?: (key: string) => void;
+  /** Whether the editor has unsaved changes — shows a dirty indicator (●) */
+  isDirty?: boolean;
   /** The main content area rendered below the tab bar (or full-width if no tabs) */
   children: ReactNode;
 }
@@ -59,8 +61,23 @@ export function EditorLayout({
   tabs,
   activeTab,
   onTabChange,
+  isDirty = false,
   children,
 }: EditorLayoutProps) {
+  // Ctrl+S / Cmd+S keyboard shortcut
+  useEffect(() => {
+    if (!onSave) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        e.stopPropagation();
+        onSave();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onSave]);
+
   return (
     <div className="flex flex-col h-full">
       {/* ── Header ─────────────────────────────────────────────────────── */}
@@ -88,6 +105,17 @@ export function EditorLayout({
             <h1 className="text-base font-semibold text-on-surface truncate">
               {resourceName}
             </h1>
+          )}
+
+          {/* Dirty indicator */}
+          {isDirty && (
+            <span
+              className="text-warning text-lg leading-none select-none"
+              title="Unsaved changes"
+              aria-label="Unsaved changes"
+            >
+              ●
+            </span>
           )}
 
           {/* Scope badge */}

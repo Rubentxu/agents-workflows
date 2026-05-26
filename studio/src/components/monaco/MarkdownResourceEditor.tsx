@@ -418,7 +418,7 @@ export function MarkdownResourceEditor({
         return splitFrontmatter(value).body;
       },
       setSection: (section) => setActiveSection(section),
-      save: () => handleSave(),
+      save: async () => { await handleSave(); },
       canSave: () => Boolean(canSave),
       getError: () => frontmatterError ?? errorMessage,
       ready: modelReadyRef.current,

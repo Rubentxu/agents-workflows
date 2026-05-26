@@ -6,10 +6,12 @@
 
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import type * as Monaco from 'monaco-editor';
 import { restApiUrl } from '@/lib/apiBase';
 import { useContent } from '@/hooks/useContent';
-import { EditorLayout } from './shared';
+import { useDirtyGuard } from '@/hooks/useDirtyGuard';
+import { EditorLayout, DirtyGuardDialog } from './shared';
 import { ResourceYamlEditor } from '@/components/monaco';
 
 export function AgentEditorPage() {
@@ -26,8 +28,13 @@ export function AgentEditorPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [yamlContent, setYamlContent] = useState('');
+  const [originalContent, setOriginalContent] = useState('');
   // Ref to Monaco editor instance — used to read fresh content on save, avoiding stale React state
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+
+  // Dirty guard: prevent data loss when navigating away with unsaved changes
+  const { isDirty, markClean, confirmNavigation, cancelNavigation, blockerState } =
+    useDirtyGuard(originalContent, yamlContent);
 
   // Load existing agent
   const fetchAgent = useCallback(async () => {
@@ -45,6 +52,7 @@ export function AgentEditorPage() {
         throw new Error('Failed to load agent content');
       }
       setYamlContent(content);
+      setOriginalContent(content);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load agent');
     } finally {
@@ -83,8 +91,12 @@ export function AgentEditorPage() {
       if (!success) {
         throw new Error('Failed to save agent content');
       }
+      markClean(content);
+      toast.success('Agent saved');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save agent');
+      const msg = err instanceof Error ? err.message : 'Failed to save agent';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -119,27 +131,41 @@ export function AgentEditorPage() {
   }
 
   return (
-    <EditorLayout
-      backLabel="Agents"
-      backPath={`/studio/projects/${projectId}/design/agents`}
-      resourceName={isNew ? 'New Agent' : 'Agent'}
-      isNew={isNew}
-      onSave={handleSave}
-      saving={saving}
-      error={error}
-      onDelete={!isNew ? handleDelete : undefined}
-    >
-      <div className="h-full min-h-[500px]">
-        <ResourceYamlEditor
-          arn={arn}
-          initialValue={yamlContent}
-          onChange={(value) => setYamlContent(value)}
-          editorRef={editorRef}
-          onSave={async (value) => {
-            await updateContent(arn, value);
+    <>
+      {blockerState === 'blocked' && (
+        <DirtyGuardDialog
+          onStay={cancelNavigation}
+          onDiscard={confirmNavigation}
+          onSaveAndLeave={async () => {
+            await handleSave();
+            confirmNavigation();
           }}
         />
-      </div>
-    </EditorLayout>
+      )}
+      <EditorLayout
+        backLabel="Agents"
+        backPath={`/studio/projects/${projectId}/design/agents`}
+        resourceName={isNew ? 'New Agent' : 'Agent'}
+        isNew={isNew}
+        onSave={handleSave}
+        saving={saving}
+        error={error}
+        onDelete={!isNew ? handleDelete : undefined}
+        isDirty={isDirty}
+      >
+        <div className="h-full min-h-[500px]">
+          <ResourceYamlEditor
+            arn={arn}
+            initialValue={yamlContent}
+            onChange={(value) => setYamlContent(value)}
+            editorRef={editorRef}
+            onSave={async (value) => {
+              await updateContent(arn, value);
+              markClean(value);
+            }}
+          />
+        </div>
+      </EditorLayout>
+    </>
   );
 }

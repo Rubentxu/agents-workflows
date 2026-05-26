@@ -6,6 +6,7 @@
 import { RouterProvider } from 'react-router-dom';
 import { createStudioRouter } from '@/router';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { Toaster } from 'react-hot-toast';
 
 export default function App() {
   const router = createStudioRouter();
@@ -15,6 +16,17 @@ export default function App() {
         Skip to main content
       </a>
       <RouterProvider router={router} />
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: 'var(--color-surface-container-high)',
+            color: 'var(--color-on-surface)',
+            border: '1px solid var(--color-outline-variant)',
+          },
+        }}
+      />
     </ErrorBoundary>
   );
 }

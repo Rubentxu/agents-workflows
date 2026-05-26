@@ -280,7 +280,7 @@ export function ResourceYamlEditor({
         }
         return model?.getValue() ?? value;
       },
-      save: () => handleSave(),
+      save: async () => { await handleSave(); },
       canSave: () => Boolean(canSave),
       getError: () => parseError ?? errorMessage,
       ready: modelReadyRef.current,

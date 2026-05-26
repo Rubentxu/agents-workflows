@@ -1059,10 +1059,16 @@ pub async fn get_content(
             )
         })?;
 
-    // Try to read the content from the file
+    // Try to read the content from the file.
+    // If the file doesn't exist yet (resource created via JSON REST API but no content file written),
+    // fall back to config_json so the editor always has something to display.
     let content_path = state.get_content_path(&arn);
     let content = if let Some(path) = content_path {
-        std::fs::read_to_string(&path).unwrap_or_default()
+        if path.exists() {
+            std::fs::read_to_string(&path).unwrap_or_default()
+        } else {
+            node.config_json.as_ref().map(|c| c.as_str()).unwrap_or("").to_string()
+        }
     } else {
         node.config_json.as_ref().map(|c| c.as_str()).unwrap_or("").to_string()
     };

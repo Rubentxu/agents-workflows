@@ -90,9 +90,9 @@ function ExecutionStepCard({ step, index, isSelected }: ExecutionStepCardProps) 
         Agent: {step.agent_arn.split('/').pop()}
       </div>
 
-      {step.depends_on.length > 0 && (
+      {(Array.isArray(step.depends_on) ? step.depends_on : []).length > 0 && (
         <div className="text-xs text-on-surface/40 mb-2">
-          Depends on: {step.depends_on.join(', ')}
+          Depends on: {(Array.isArray(step.depends_on) ? step.depends_on : []).join(', ')}
         </div>
       )}
 

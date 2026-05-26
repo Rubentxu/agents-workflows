@@ -134,7 +134,7 @@ export function WorkflowInspector({ node, workflow, onUpdate, onClose }: Workflo
           <input
             id="inspector-depends-on"
             type="text"
-            value={(localData.dependsOn ?? stageData?.depends_on ?? []).join(', ')}
+            value={(localData.dependsOn ?? (Array.isArray(stageData?.depends_on) ? stageData.depends_on : []) ?? []).join(', ')}
             onChange={(e) =>
               handleChange(
                 'dependsOn',

@@ -148,7 +148,7 @@ export class WorkflowEditorPage {
   }
 
   get saveButton(): Locator {
-    return this.page.getByRole('button', { name: 'Save' });
+    return this.page.getByRole('button', { name: 'Save' }).first();
   }
 
   async switchToYamlTab() {
@@ -214,7 +214,7 @@ export class AgentEditorPage {
   }
 
   get saveButton(): Locator {
-    return this.page.getByRole('button', { name: 'Save' });
+    return this.page.getByRole('button', { name: 'Save' }).first();
   }
 
   async switchToTab(tab: 'config' | 'resources' | 'yaml') {

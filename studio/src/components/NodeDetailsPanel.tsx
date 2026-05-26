@@ -55,9 +55,9 @@ function StageDetails({ stage }: StageDetailsProps) {
         </Section>
 
         <Section title="Dependencies">
-          {stage.depends_on.length > 0 ? (
+          {(Array.isArray(stage.depends_on) ? stage.depends_on : []).length > 0 ? (
             <ul className="text-sm text-on-surface/60 space-y-1">
-              {stage.depends_on.map((dep) => (
+              {(Array.isArray(stage.depends_on) ? stage.depends_on : []).map((dep) => (
                 <li key={dep} className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-on-surface/30"></span>
                   {dep}

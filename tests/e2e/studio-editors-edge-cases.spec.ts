@@ -1,31 +1,54 @@
 /**
  * Studio Editors — Error States & Edge Cases E2E Tests
  *
- * Tests error handling, validation, and edge cases in the Studio editors:
- * - Workflow Editor: YAML parsing errors, invalid stages, canvas interactions
- * - Agent Editor: validation errors, config tab errors
- * - Skill Editor: save failures, empty states
- * - Prompt Editor: validation, content edge cases
- * - Multi-stage workflows: complex DAGs, dependencies
+ * Tests error handling, validation, and edge cases in the Studio editors
+ * using Monaco-based editors (ADR-0016).
+ *
+ * Editor families:
+ *   - YAML family (ResourceYamlEditor): Agent, Tool
+ *     → Monaco YAML editor, single editing surface
+ *   - Markdown family (MarkdownResourceEditor): Skill, Prompt, Template
+ *     → Monaco with split view: YAML frontmatter + Markdown body
+ *   - Workflow (WorkflowYamlEditor): Workflow
+ *     → ReactFlow canvas + Monaco YAML panel side-by-side
  */
 
 import { test, expect } from '../helpers/e2e-fixtures';
-import { WorkflowEditorPage, AgentEditorPage } from '../helpers/page-objects';
+import { WorkflowEditorPage } from '../helpers/page-objects';
+import {
+  waitForMonacoReady,
+  fillMonaco,
+  getMonacoContent,
+  getMonacoSaveButton,
+  setYamlEditorValue,
+  getYamlEditorValue,
+  setWorkflowEditorValue,
+  getWorkflowEditorValue,
+  setMarkdownEditorValue,
+  getMarkdownEditorValue,
+  switchMarkdownView,
+  MONACO_EDITOR_SELECTOR,
+} from '../helpers/monaco-helpers';
 
 const BASE_URL = process.env.AGENTS_WORKFLOWS_URL || 'http://localhost:8080';
 const PROJECT_ID = 'test';
+const PROJECT_SCOPE = `project/${PROJECT_ID}`;
+const GLOBAL_SCOPE = 'global';
+
+function editorUrl(resource: string, id: string) {
+  return `${BASE_URL}/studio/projects/${PROJECT_ID}/design/${resource}/${encodeURIComponent(id)}/editor`;
+}
+
+// ─── Workflow Editor ────────────────────────────────────────────────────────
 
 test.describe('Workflow Editor — Error States & Edge Cases', () => {
   test('shows error when loading non-existent workflow', async ({ page }) => {
     const editor = new WorkflowEditorPage(page);
 
-    // Navigate to a workflow that doesn't exist
     await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/workflows/nonexistent-workflow/editor`);
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(1000);
 
-    // Should either show error, or load the editor in some state without crashing
-    // The key is that the page doesn't hard-crash
     const pageLoaded = await page.getByText('← Workflows').isVisible().catch(() => false) ||
                        await page.getByText(/error/i).isVisible().catch(() => false) ||
                        await page.getByText('Page not found').isVisible().catch(() => false) ||
@@ -33,16 +56,16 @@ test.describe('Workflow Editor — Error States & Edge Cases', () => {
     expect(pageLoaded).toBeTruthy();
   });
 
-  test('YAML tab: handles invalid YAML gracefully', async ({ page }) => {
+  test('YAML panel: handles invalid YAML gracefully', async ({ page, rest, seedRegistry }) => {
+    const name = rest.uniqueName('e2e-invalid-yaml');
+    const { arn } = await rest.createWorkflow(name, 'global');
+    seedRegistry.register(() => rest.deleteWorkflow(arn));
+
     const editor = new WorkflowEditorPage(page);
-    await editor.gotoNew(PROJECT_ID);
+    await editor.gotoExistingByArn(PROJECT_ID, arn);
     await page.waitForLoadState('domcontentloaded');
+    await waitForMonacoReady(page);
 
-    await editor.switchToYamlTab();
-    const textarea = editor.yamlEditor;
-    await expect(textarea).toBeVisible();
-
-    // Enter malformed YAML
     const invalidYaml = `apiVersion: workflows.local/v1
 kind: Workflow
 metadata:
@@ -54,46 +77,36 @@ spec:
   execution:
     mode: [invalid yaml structure`;
 
-    await textarea.clear();
-    await textarea.fill(invalidYaml);
+    await setWorkflowEditorValue(page, arn, invalidYaml);
 
-    // Apply button should be clickable but may show error on parse
-    const applyBtn = page.getByRole('button', { name: 'Apply changes' });
-    if (await applyBtn.isVisible()) {
-      await applyBtn.click();
-      await page.waitForTimeout(500);
-      // Editor should not crash - either shows error or reverts
-      const stillVisible = await textarea.isVisible();
-      expect(stillVisible).toBeTruthy();
-    }
+    const content = await getWorkflowEditorValue(page, arn);
+    expect(content).toContain('invalid yaml structure');
+
+    // Save button remains enabled — the frontend does not gate Save on YAML validity.
+    // The key invariant is that Monaco accepted and preserved the invalid content.
+    await expect(page.locator(MONACO_EDITOR_SELECTOR)).toBeVisible();
   });
 
-  test('YAML tab: handles empty YAML', async ({ page }) => {
-    const editor = new WorkflowEditorPage(page);
-    await editor.gotoNew(PROJECT_ID);
+  test('YAML panel: handles empty YAML', async ({ page, rest, seedRegistry }) => {
+    const name = rest.uniqueName('e2e-empty-yaml');
+    const { arn } = await rest.createWorkflow(name, 'project/test');
+    seedRegistry.register(() => rest.deleteWorkflow(arn));
+
+    await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/workflows/${encodeURIComponent(arn)}/editor?arn=${encodeURIComponent(arn)}`);
     await page.waitForLoadState('domcontentloaded');
+    await waitForMonacoReady(page);
 
-    await editor.switchToYamlTab();
-    const textarea = editor.yamlEditor;
-    await expect(textarea).toBeVisible();
+    await setWorkflowEditorValue(page, arn, '');
 
-    // Clear and leave empty
-    await textarea.clear();
+    const content = await getWorkflowEditorValue(page, arn);
+    expect(content).toBe('');
 
-    // Apply should still work or show appropriate error
-    const applyBtn = page.getByRole('button', { name: 'Apply changes' });
-    if (await applyBtn.isVisible()) {
-      await applyBtn.click();
-      await page.waitForTimeout(300);
-    }
-    // Editor should remain functional
-    await expect(textarea).toBeVisible();
+    await expect(page.locator(MONACO_EDITOR_SELECTOR)).toBeVisible();
   });
 
   test('canvas tab: add stage shows in nodes', async ({ page, rest, seedRegistry }) => {
     const editor = new WorkflowEditorPage(page);
 
-    // Create a workflow with stages
     const name = rest.uniqueName('e2e-canvas-test');
     const { arn } = await rest.createWorkflow(name, 'project/test');
     seedRegistry.register(() => rest.deleteWorkflow(arn));
@@ -101,7 +114,6 @@ spec:
     await editor.gotoExistingByArn(PROJECT_ID, arn);
     await page.waitForLoadState('domcontentloaded');
 
-    // The canvas should be visible with the ReactFlow container
     const canvas = page.locator('.react-flow');
     await expect(canvas).toBeVisible();
   });
@@ -109,237 +121,188 @@ spec:
   test('canvas tab: inspector shows when node is selected', async ({ page, rest, seedRegistry }) => {
     const editor = new WorkflowEditorPage(page);
 
-    // Create workflow with stages via YAML
     const name = rest.uniqueName('e2e-inspector-test');
     const { arn } = await rest.createWorkflow(name, 'project/test');
     seedRegistry.register(() => rest.deleteWorkflow(arn));
 
     await editor.gotoExistingByArn(PROJECT_ID, arn);
     await page.waitForLoadState('domcontentloaded');
-
-    // Wait for canvas to load
     await page.waitForTimeout(1000);
 
-    // Try to click on a node if any exist
     const nodes = page.locator('.react-flow__node');
     const nodeCount = await nodes.count();
 
     if (nodeCount > 0) {
-      // Click a node
       await nodes.first().click();
       await page.waitForTimeout(500);
 
-      // Inspector panel should appear with stage details
       const inspectorPanel = page.locator('text=Select a stage to inspect').or(page.locator('[data-testid*="workflow-inspector"]'));
-      // Either inspector is shown or the "select stage" placeholder
       const hasInspector = await inspectorPanel.isVisible().catch(() => false);
       expect(hasInspector || nodeCount > 0).toBeTruthy();
     } else {
-      // No nodes - should show placeholder
       const placeholder = page.locator('text=Select a stage to inspect');
       await expect(placeholder).toBeVisible();
     }
   });
 
-  test('switching tabs preserves data', async ({ page, rest, seedRegistry }) => {
-    const editor = new WorkflowEditorPage(page);
-
+  test('switching between canvas and YAML preserves data', async ({ page, rest, seedRegistry }) => {
     const name = rest.uniqueName('e2e-tab-switch');
-    const { arn } = await rest.createWorkflow(name, 'project/test');
+    const { arn } = await rest.createWorkflow(name, 'global');
     seedRegistry.register(() => rest.deleteWorkflow(arn));
 
+    const editor = new WorkflowEditorPage(page);
     await editor.gotoExistingByArn(PROJECT_ID, arn);
     await page.waitForLoadState('domcontentloaded');
+    await waitForMonacoReady(page);
 
-    // Switch to YAML and enter content
-    await editor.switchToYamlTab();
-    const textarea = editor.yamlEditor;
-    await expect(textarea).toBeVisible();
+    const originalContent = await getWorkflowEditorValue(page, arn);
+    expect(originalContent.length).toBeGreaterThan(0);
 
-    const originalContent = await textarea.inputValue();
+    // Switch to Canvas view
+    const canvasButton = page.getByRole('button', { name: 'Canvas' });
+    if (await canvasButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await canvasButton.click();
+      await page.waitForTimeout(500);
+    }
 
-    // Switch back to canvas
-    await page.getByRole('button', { name: 'Canvas' }).click();
-    await page.waitForTimeout(300);
+    // Switch back to YAML view
+    const yamlButton = page.getByRole('button', { name: 'YAML' });
+    if (await yamlButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await yamlButton.click();
+      await page.waitForTimeout(500);
+    }
 
-    // Switch back to YAML
-    await editor.switchToYamlTab();
-    await page.waitForTimeout(300);
-
-    // Content should be preserved
-    const afterSwitch = await textarea.inputValue();
-    // Content should either be preserved or the workflow loaded fresh
+    const afterSwitch = await getWorkflowEditorValue(page, arn);
     expect(afterSwitch.length).toBeGreaterThan(0);
   });
 });
 
+// ─── Agent Editor ────────────────────────────────────────────────────────────
+
 test.describe('Agent Editor — Error States & Edge Cases', () => {
-  test('shows error when loading non-existent agent', async ({ page }) => {
+  test('shows shell when loading non-existent agent', async ({ page }) => {
     await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/agents/nonexistent-agent/editor`);
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(1000);
 
-    // Should either show editor chrome, error, or loading without crashing.
-    const hasContent = await page.getByRole('button', { name: /agents/i }).isVisible().catch(() => false) ||
-                      await page.getByRole('button', { name: 'Save' }).isVisible().catch(() => false) ||
-                      await page.getByRole('heading', { name: /nonexistent-agent/i }).isVisible().catch(() => false) ||
-                      await page.getByText(/error/i).isVisible().catch(() => false) ||
-                      await page.getByText(/loading/i).isVisible().catch(() => false);
-    expect(hasContent).toBeTruthy();
+    // The editor renders an empty shell (heading + back link) for non-existent resources.
+    // It does NOT show an error — the resource simply has no content.
+    const backLink = page.getByText('← Agents');
+    const heading = page.getByRole('heading', { name: /agent/i });
+    const shellVisible = await backLink.isVisible().catch(() => false) ||
+                         await heading.isVisible().catch(() => false);
+    expect(shellVisible).toBeTruthy();
   });
 
-  test('config tab: name field validates empty name', async ({ page }) => {
-    const editor = new AgentEditorPage(page);
-    await editor.gotoNew(PROJECT_ID);
+  test('Monaco loads with YAML content for existing agent', async ({ page, rest, seedRegistry }) => {
+    const name = rest.uniqueName('e2e-agent-load');
+    const { arn } = await rest.createAgent(name, PROJECT_SCOPE);
+    seedRegistry.register(() => rest.deleteAgent(arn));
+
+    await page.goto(editorUrl('agents', name));
     await page.waitForLoadState('domcontentloaded');
+    await waitForMonacoReady(page);
 
-    // Find the name input
-    const nameInput = page.locator('input[type="text"]').first();
-    await expect(nameInput).toBeVisible();
-
-    // Clear the name
-    await nameInput.clear();
-
-    // Save button should be disabled or show validation
-    const saveBtn = page.getByRole('button', { name: 'Save' });
-    // If validation exists, button might be disabled
-    // Either way, clearing name should not crash
-    expect(await nameInput.inputValue()).toBe('');
+    const content = await getMonacoContent(page);
+    expect(content).toContain('model:');
+    expect(content).toContain('description:');
   });
 
-  test('config tab: model field accepts various model names', async ({ page }) => {
-    const editor = new AgentEditorPage(page);
-    await editor.gotoNew(PROJECT_ID);
+  test('YAML content contains expected agent fields', async ({ page, rest, seedRegistry }) => {
+    const name = rest.uniqueName('e2e-agent-fields');
+    const arn = `arn:local:${PROJECT_SCOPE}:agent/${name}`;
+    seedRegistry.register(() => rest.deleteAgent(arn));
+
+    await rest.createAgent(name, PROJECT_SCOPE);
+
+    await page.goto(editorUrl('agents', name));
     await page.waitForLoadState('domcontentloaded');
+    await waitForMonacoReady(page);
 
-    // Find model input (second text input)
-    const modelInput = page.locator('input[type="text"]').nth(1);
-    await expect(modelInput).toBeVisible();
-
-    // Try different model names
-    const models = ['gpt-4', 'claude-3-5-sonnet', 'gemini-pro', 'ollama/llama2'];
-    for (const model of models) {
-      await modelInput.clear();
-      await modelInput.fill(model);
-      const value = await modelInput.inputValue();
-      expect(value).toBe(model);
-    }
+    const content = await getMonacoContent(page);
+    expect(content).toContain('temperature:');
+    expect(content).toContain('steps:');
   });
 
-  test('config tab: timeout field accepts numeric values', async ({ page }) => {
-    const editor = new AgentEditorPage(page);
-    await editor.gotoNew(PROJECT_ID);
+  test('Monaco displays valid YAML content after programmatic edit', async ({ page, rest, seedRegistry }) => {
+    const name = rest.uniqueName('e2e-agent-edit');
+    const arn = `arn:local:${PROJECT_SCOPE}:agent/${name}`;
+    seedRegistry.register(() => rest.deleteAgent(arn));
+
+    await rest.createAgent(name, PROJECT_SCOPE);
+
+    await page.goto(editorUrl('agents', name));
     await page.waitForLoadState('domcontentloaded');
+    await waitForMonacoReady(page);
 
-    // Find timeout input (number type)
-    const timeoutInput = page.locator('input[type="number"]');
-    await expect(timeoutInput).toBeVisible();
+    const updatedYaml = `arn: local
+model: anthropic/claude-3.5-sonnet
+description: Updated via Monaco editor edge-case test
+temperature: 0.9
+steps: 100
+mode: all
+hidden: false
+color: accent
+tools:
+  bash: true
+  read: true
+  edit: true
+`;
 
-    // Enter timeout values
-    await timeoutInput.clear();
-    await timeoutInput.fill('120000');
-    expect(await timeoutInput.inputValue()).toBe('120000');
+    await setYamlEditorValue(page, arn, updatedYaml);
 
-    await timeoutInput.clear();
-    await timeoutInput.fill('30000');
-    expect(await timeoutInput.inputValue()).toBe('30000');
-  });
-
-  test('resources tab: shows empty state correctly', async ({ page }) => {
-    const editor = new AgentEditorPage(page);
-    await editor.gotoNew(PROJECT_ID);
-    await page.waitForLoadState('domcontentloaded');
-
-    // Switch to resources tab
-    await page.getByRole('button', { name: 'Resources' }).click();
-    await page.waitForTimeout(300);
-
-    // Should show empty state messages for skills, prompts, tools
-    const emptyMessages = page.locator('text=No skills bound').or(page.locator('text=No prompts bound')).or(page.locator('text=No tools bound'));
-    await expect(emptyMessages.first()).toBeVisible();
-  });
-
-  test('yaml tab: shows JSON representation', async ({ page }) => {
-    const editor = new AgentEditorPage(page);
-    await editor.gotoNew(PROJECT_ID);
-    await page.waitForLoadState('domcontentloaded');
-
-    // Switch to YAML tab
-    await page.getByRole('button', { name: 'YAML' }).click();
-    await page.waitForTimeout(300);
-
-    // Should show JSON/YAML representation of the agent
-    const preElement = page.locator('pre');
-    await expect(preElement).toBeVisible();
-
-    // Content should be parseable JSON
-    const content = await preElement.textContent();
-    expect(() => JSON.parse(content || '{}')).not.toThrow();
+    const content = await getYamlEditorValue(page, arn);
+    expect(content).toContain('anthropic/claude-3.5-sonnet');
+    expect(content).toContain('Updated via Monaco editor');
   });
 });
+
+// ─── Skill Editor ─────────────────────────────────────────────────────────────
 
 test.describe('Skill Editor — Error States & Edge Cases', () => {
-  test('shows error when loading non-existent skill', async ({ page }) => {
+  test('shows shell when loading non-existent skill', async ({ page }) => {
     await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/skills/nonexistent-skill/editor`);
     await page.waitForLoadState('domcontentloaded');
+    await page.waitForTimeout(1000);
 
-    // Should not crash
-    const hasContent = await page.getByText('← Skills').isVisible().catch(() => false) ||
-                      await page.getByText(/error/i).isVisible().catch(() => false) ||
-                      await page.getByText(/loading/i).isVisible().catch(() => false);
-    expect(hasContent).toBeTruthy();
+    // The editor renders an empty shell (back link) for non-existent resources.
+    const backLink = page.getByText('← Skills');
+    const heading = page.getByRole('heading', { name: /skill/i });
+    const shellVisible = await backLink.isVisible().catch(() => false) ||
+                         await heading.isVisible().catch(() => false);
+    expect(shellVisible).toBeTruthy();
   });
 
-  test('instructions field accepts long content', async ({ page }) => {
-    await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/skills/new/editor`);
+  test('Monaco handles large content in skill editor', async ({ page, rest, seedRegistry }) => {
+    const name = rest.uniqueName('e2e-skill-large');
+    const arn = `arn:local:${GLOBAL_SCOPE}:skill/${name}`;
+    seedRegistry.register(() => rest.deleteSkill(arn));
+
+    await rest.createSkill(name, GLOBAL_SCOPE);
+
+    await page.goto(editorUrl('skills', name));
     await page.waitForLoadState('domcontentloaded');
+    await waitForMonacoReady(page);
 
-    const textarea = page.locator('textarea').first();
-    await expect(textarea).toBeVisible();
+    const longBody = 'x'.repeat(5000);
+    const largeContent = `---
+name: ${name}
+description: Large content skill test
+author: e2e
+version: 1.0.0
+license: MIT
+---
 
-    // Enter a long skill instruction
-    const longContent = `# Test Skill
+# Large Skill Content\n\n${longBody}`;
 
-This is a very long skill instruction that tests how the editor
-handles large amounts of text content. ` + 'x'.repeat(5000);
+    await setMarkdownEditorValue(page, arn, largeContent);
 
-    await textarea.clear();
-    await textarea.fill(longContent);
-
-    const value = await textarea.inputValue();
-    expect(value.length).toBeGreaterThan(4000);
-  });
-
-  test('triggers field parses comma-separated values', async ({ page }) => {
-    await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/skills/new/editor`);
-    await page.waitForLoadState('domcontentloaded');
-
-    // Find triggers input - it's the last text input on the skill editor page
-    const triggersInput = page.locator('input[type="text"]').last();
-    await expect(triggersInput).toBeVisible();
-
-    await triggersInput.clear();
-    await triggersInput.fill('trigger1, trigger2, trigger3');
-
-    const value = await triggersInput.inputValue();
-    expect(value).toContain('trigger1');
-    expect(value).toContain('trigger2');
-    expect(value).toContain('trigger3');
-  });
-
-  test('triggers field handles empty value', async ({ page }) => {
-    await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/skills/new/editor`);
-    await page.waitForLoadState('domcontentloaded');
-
-    // Use last() since triggers is the last text input
-    const triggersInput = page.locator('input[type="text"]').last();
-    await triggersInput.clear();
-    await triggersInput.fill('');
-
-    // Should not crash
-    expect(await triggersInput.inputValue()).toBe('');
+    const content = await getMarkdownEditorValue(page, arn);
+    expect(content.length).toBeGreaterThan(5000);
   });
 });
+
+// ─── Prompt Editor ────────────────────────────────────────────────────────────
 
 test.describe('Prompt Editor — Error States & Edge Cases', () => {
   test('shows error when loading non-existent prompt', async ({ page }) => {
@@ -347,22 +310,31 @@ test.describe('Prompt Editor — Error States & Edge Cases', () => {
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(1000);
 
-    // Should either show error or load without hard-crash
     const pageLoaded = await page.getByText('← Prompts').isVisible().catch(() => false) ||
-                      await page.getByText(/error/i).isVisible().catch(() => false) ||
-                      await page.getByText('Page not found').isVisible().catch(() => false) ||
-                      await page.getByRole('button', { name: 'Save' }).isVisible().catch(() => false);
+                       await page.getByText(/error/i).isVisible().catch(() => false) ||
+                       await page.getByText('Page not found').isVisible().catch(() => false) ||
+                       await page.getByRole('button', { name: 'Save' }).isVisible().catch(() => false);
     expect(pageLoaded).toBeTruthy();
   });
 
-  test('template content field accepts multiline content', async ({ page }) => {
-    await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/prompts/new/editor`);
+  test('Monaco split view displays multiline template content', async ({ page, rest, seedRegistry }) => {
+    const name = rest.uniqueName('e2e-prompt-multi');
+    const arn = `arn:local:${GLOBAL_SCOPE}:prompt/${name}`;
+    seedRegistry.register(() => rest.deletePrompt(arn));
+
+    await rest.createPrompt(name, GLOBAL_SCOPE);
+
+    await page.goto(editorUrl('prompts', name));
     await page.waitForLoadState('domcontentloaded');
+    await waitForMonacoReady(page);
 
-    const textarea = page.locator('textarea').first();
-    await expect(textarea).toBeVisible();
+    const multilineContent = `---
+name: ${name}
+description: Multiline prompt test
+kind: system
+---
 
-    const multilineContent = `You are a helpful assistant.
+You are a helpful assistant.
 
 Context:
 {{context}}
@@ -374,41 +346,40 @@ User: {{input}}
 
 Please respond with: {{response_format}}`;
 
-    await textarea.clear();
-    await textarea.fill(multilineContent);
+    await setMarkdownEditorValue(page, arn, multilineContent);
 
-    const value = await textarea.inputValue();
-    expect(value).toContain('{{context}}');
-    expect(value).toContain('{{input}}');
+    const content = await getMarkdownEditorValue(page, arn);
+    expect(content).toContain('{{context}}');
+    expect(content).toContain('{{input}}');
+    expect(content).toContain('{{response_format}}');
   });
 
-  test('variables field parses comma-separated values', async ({ page }) => {
-    await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/prompts/new/editor`);
+  test('switching views preserves markdown content', async ({ page, rest, seedRegistry }) => {
+    const name = rest.uniqueName('e2e-prompt-view');
+    const arn = `arn:local:${GLOBAL_SCOPE}:prompt/${name}`;
+    seedRegistry.register(() => rest.deletePrompt(arn));
+
+    await rest.createPrompt(name, GLOBAL_SCOPE);
+
+    await page.goto(editorUrl('prompts', name));
     await page.waitForLoadState('domcontentloaded');
+    await waitForMonacoReady(page);
 
-    // Find variables input (second text input)
-    const variablesInput = page.locator('input[type="text"]').nth(1);
-    await expect(variablesInput).toBeVisible();
+    const originalContent = await getMarkdownEditorValue(page, arn);
 
-    await variablesInput.clear();
-    await variablesInput.fill('var1, var2, var3');
+    await switchMarkdownView(page, 'frontmatter');
+    await page.waitForTimeout(300);
 
-    const value = await variablesInput.inputValue();
-    expect(value).toContain('var1');
-  });
+    await switchMarkdownView(page, 'split');
+    await page.waitForTimeout(300);
 
-  test('variables field handles complex variable names', async ({ page }) => {
-    await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/prompts/new/editor`);
-    await page.waitForLoadState('domcontentloaded');
-
-    const variablesInput = page.locator('input[type="text"]').nth(1);
-    await variablesInput.clear();
-    await variablesInput.fill('input, context, system_prompt, response_format');
-
-    const value = await variablesInput.inputValue();
-    expect(value.length).toBeGreaterThan(0);
+    const afterSwitch = await getMarkdownEditorValue(page, arn);
+    expect(afterSwitch.length).toBeGreaterThan(0);
+    expect(afterSwitch).toContain('---');
   });
 });
+
+// ─── Workflow Execution — Pause/Resume via REST (unchanged, MCP-based) ───────
 
 test.describe('Workflow Execution — Pause/Resume via REST', () => {
   const REST_URL = process.env.AGENTS_WORKFLOWS_REST_URL || 'http://localhost:8081';
@@ -426,7 +397,6 @@ test.describe('Workflow Execution — Pause/Resume via REST', () => {
   }
 
   test('can pause a running execution via REST', async ({ mcp }) => {
-    // Create execution via MCP
     const rawWorkflows = await mcp.request('workflow_list');
     const workflows = mcp.parseToolResult(rawWorkflows) as Array<{ arn: string }>;
     expect(workflows.length, 'At least one workflow must exist').toBeGreaterThan(0);
@@ -439,19 +409,16 @@ test.describe('Workflow Execution — Pause/Resume via REST', () => {
     const execution = mcp.parseToolResult(rawExec) as { arn: string };
     expect(execution.arn).toBeDefined();
 
-    // Pause via REST
     const pauseResult = await fetchJSON(`${REST_URL}/api/executions/${encodeURIComponent(execution.arn)}/pause`, {
       method: 'POST',
     });
     expect(pauseResult).toBeDefined();
     console.log('Execution paused via REST:', execution.arn);
 
-    // Abort to clean up
     await mcp.request('workflow_abort', { execution_arn: execution.arn });
   });
 
   test('can resume a paused execution via REST', async ({ mcp }) => {
-    // Create execution
     const rawWorkflows = await mcp.request('workflow_list');
     const workflows = mcp.parseToolResult(rawWorkflows) as Array<{ arn: string }>;
     expect(workflows.length, 'At least one workflow must exist').toBeGreaterThan(0);
@@ -463,20 +430,17 @@ test.describe('Workflow Execution — Pause/Resume via REST', () => {
     });
     const execution = mcp.parseToolResult(rawExec) as { arn: string };
 
-    // Pause via REST
     await fetchJSON(`${REST_URL}/api/executions/${encodeURIComponent(execution.arn)}/pause`, {
       method: 'POST',
     });
     await mcp.waitForTimeout(500);
 
-    // Resume via REST
     const resumeResult = await fetchJSON(`${REST_URL}/api/executions/${encodeURIComponent(execution.arn)}/resume`, {
       method: 'POST',
     });
     expect(resumeResult).toBeDefined();
     console.log('Execution resumed via REST:', execution.arn);
 
-    // Abort to clean up
     await mcp.request('workflow_abort', { execution_arn: execution.arn });
   });
 
@@ -492,23 +456,22 @@ test.describe('Workflow Execution — Pause/Resume via REST', () => {
     });
     const execution = mcp.parseToolResult(rawExec) as { arn: string };
 
-    // Pause via REST
     await fetchJSON(`${REST_URL}/api/executions/${encodeURIComponent(execution.arn)}/pause`, {
       method: 'POST',
     });
     await mcp.waitForTimeout(500);
 
-    // Check state via MCP
     const rawState = await mcp.request('workflow_get_state', {
       execution_arn: execution.arn,
     });
     const state = mcp.parseToolResult(rawState) as { status: string };
     expect(state.status).toBe('paused');
 
-    // Abort to clean up
     await mcp.request('workflow_abort', { execution_arn: execution.arn });
   });
 });
+
+// ─── Multi-Stage Workflow — Stage Dependencies (unchanged, MCP-based) ────────
 
 test.describe('Multi-Stage Workflow — Stage Dependencies', () => {
   test('workflow with multiple stages executes all stages', async ({ mcp }) => {
@@ -516,7 +479,6 @@ test.describe('Multi-Stage Workflow — Stage Dependencies', () => {
     const workflows = mcp.parseToolResult(rawWorkflows) as Array<{ arn: string }>;
     expect(workflows.length, 'At least one workflow must exist').toBeGreaterThan(0);
 
-    // Find a workflow with multiple stages
     let multiStageArn = workflows[0].arn;
     for (const wf of workflows) {
       const rawDag = await mcp.request('workflow_get_dag', { arn: wf.arn });
@@ -536,19 +498,16 @@ test.describe('Multi-Stage Workflow — Stage Dependencies', () => {
     expect(execution.arn).toBeDefined();
     console.log('Multi-stage execution:', execution.arn);
 
-    // Get the DAG to understand stages
     const rawDag = await mcp.request('workflow_get_dag', { arn: multiStageArn });
     const dag = mcp.parseToolResult(rawDag) as { nodes: Array<{ id: string }>; edges: unknown[] };
     console.log(`Workflow has ${dag.nodes.length} stages and ${dag.edges.length} dependencies`);
 
-    // Get next stage suggestion
     const rawNext = await mcp.request('workflow_get_next_stage', {
       execution_arn: execution.arn,
     });
     const nextStage = mcp.parseToolResult(rawNext);
     expect(nextStage).toBeDefined();
 
-    // Abort to clean up
     await mcp.request('workflow_abort', { execution_arn: execution.arn });
   });
 
@@ -561,18 +520,15 @@ test.describe('Multi-Stage Workflow — Stage Dependencies', () => {
     const rawDag = await mcp.request('workflow_get_dag', { arn });
     const dag = mcp.parseToolResult(rawDag) as { nodes: unknown[]; edges: unknown[] };
 
-    // Verify DAG structure
     expect(Array.isArray(dag.nodes)).toBeTruthy();
     expect(Array.isArray(dag.edges)).toBeTruthy();
 
-    // Each node should have an id (DagNode: { id, stage, depends_on })
     for (const node of dag.nodes as Array<{ id: string; stage: string; depends_on: string[] }>) {
       expect(typeof node.id).toBe('string');
       expect(typeof node.stage).toBe('string');
       expect(Array.isArray(node.depends_on)).toBeTruthy();
     }
 
-    // Each edge should have from and to (DagEdge: { from, to })
     for (const edge of dag.edges as Array<{ from: string; to: string }>) {
       expect(typeof edge.from).toBe('string');
       expect(typeof edge.to).toBe('string');
@@ -593,7 +549,6 @@ test.describe('Multi-Stage Workflow — Stage Dependencies', () => {
     });
     const execution = mcp.parseToolResult(rawExec) as { arn: string };
 
-    // Update state through multiple stages
     const stages = ['explore', 'spec', 'design', 'tasks'];
     for (const stage of stages) {
       const rawUpdate = await mcp.request('workflow_update_state', {
@@ -604,7 +559,6 @@ test.describe('Multi-Stage Workflow — Stage Dependencies', () => {
       });
       expect(rawUpdate).toBeDefined();
 
-      // Get next stage
       const rawNext = await mcp.request('workflow_get_next_stage', {
         execution_arn: execution.arn,
       });
@@ -612,32 +566,28 @@ test.describe('Multi-Stage Workflow — Stage Dependencies', () => {
       expect(next).toBeDefined();
     }
 
-    // Abort to clean up
     await mcp.request('workflow_abort', { execution_arn: execution.arn });
   });
 });
 
+// ─── Resource Override Flow (unchanged, REST-based) ──────────────────────────
+
 test.describe('Resource Override Flow', () => {
   test('override workflow appears in project scope', async ({ page, rest, seedRegistry }) => {
-    // First create a global workflow to override
     const globalName = rest.uniqueName('global-to-override');
     const { arn: globalArn } = await rest.createWorkflow(globalName, 'global');
     seedRegistry.register(() => rest.deleteWorkflow(globalArn));
 
-    // Create a project-scoped workflow that overrides the global
     const projectName = rest.uniqueName('override-workflow');
     const { arn: overrideArn } = await rest.createWorkflow(projectName, 'project/test');
     seedRegistry.register(() => rest.deleteWorkflow(overrideArn));
 
-    // Navigate to project workflows
     await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/workflows`);
     await page.waitForLoadState('networkidle');
 
-    // Both workflows should appear in the catalog
     const globalRow = page.locator(`[data-testid="workflow-catalog-row-${globalName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}"]`);
     const projectRow = page.locator(`[data-testid="workflow-catalog-row-${projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}"]`);
 
-    // Refreshing to ensure data loads
     await page.reload();
     await page.waitForLoadState('networkidle');
 
@@ -645,18 +595,14 @@ test.describe('Resource Override Flow', () => {
   });
 
   test('override source ARN is recorded correctly', async ({ rest, seedRegistry }) => {
-    // Create source workflow
     const sourceName = rest.uniqueName('override-source');
     const { arn: sourceArn } = await rest.createWorkflow(sourceName, 'global');
     seedRegistry.register(() => rest.deleteWorkflow(sourceArn));
 
-    // The override concept - when creating a project-scoped resource with same name as global
-    // it effectively becomes an override
-    const overrideName = sourceName; // Same name creates override behavior
+    const overrideName = sourceName;
     const { arn: overrideArn } = await rest.createWorkflow(overrideName, 'project/test');
     seedRegistry.register(() => rest.deleteWorkflow(overrideArn));
 
-    // Verify the ARNs are different (different scopes)
     expect(sourceArn).not.toBe(overrideArn);
     expect(sourceArn).toContain('global');
     expect(overrideArn).toContain('project');
@@ -665,13 +611,14 @@ test.describe('Resource Override Flow', () => {
   });
 });
 
+// ─── Validation & Edge Cases (unchanged, MCP/REST-based) ─────────────────────
+
 test.describe('Validation & Edge Cases', () => {
   test('workflow without stages is valid', async ({ rest, seedRegistry }) => {
     const name = rest.uniqueName('empty-workflow');
     const { arn } = await rest.createWorkflow(name, 'project/test');
     seedRegistry.register(() => rest.deleteWorkflow(arn));
 
-    // Empty stages should be accepted
     expect(arn).toBeDefined();
     expect(arn).toContain(name);
   });
@@ -688,7 +635,7 @@ test.describe('Validation & Edge Cases', () => {
   test('skill without triggers is valid', async ({ rest, seedRegistry }) => {
     const name = rest.uniqueName('no-triggers-skill');
     const { arn } = await rest.createSkill(name, 'global');
-    seedRegistry.register(() => rest.deleteWorkflow(arn));
+    seedRegistry.register(() => rest.deleteSkill(arn));
 
     expect(arn).toBeDefined();
   });
@@ -698,7 +645,6 @@ test.describe('Validation & Edge Cases', () => {
     const workflows = mcp.parseToolResult(rawWorkflows) as Array<{ arn: string }>;
     expect(workflows.length, 'At least one workflow must exist').toBeGreaterThan(0);
 
-    // Execute with empty input
     const rawExec = await mcp.request('workflow_execute', {
       workflow_arn: workflows[0].arn,
       workspace_id: `test-empty-input-${Date.now()}`,
@@ -707,7 +653,6 @@ test.describe('Validation & Edge Cases', () => {
     const execution = mcp.parseToolResult(rawExec) as { arn: string };
     expect(execution.arn).toBeDefined();
 
-    // Clean up
     await mcp.request('workflow_abort', { execution_arn: execution.arn });
   });
 
@@ -729,7 +674,6 @@ test.describe('Validation & Edge Cases', () => {
     const execution = mcp.parseToolResult(rawExec) as { arn: string };
     expect(execution.arn).toBeDefined();
 
-    // Clean up
     await mcp.request('workflow_abort', { execution_arn: execution.arn });
   });
 });

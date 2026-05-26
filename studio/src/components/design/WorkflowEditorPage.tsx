@@ -65,7 +65,7 @@ function mcpStageToStage(dto: McpStageDto, id: string): Stage {
   return {
     id: dto.id ?? id,
     agent: dto.agent,
-    depends_on: dto.depends_on ?? [],
+    depends_on: Array.isArray(dto.depends_on) ? dto.depends_on : [],
     description: dto.description ?? '',
     input: (dto.input ?? {}) as Record<string, import('@/types/workflow').InputValue>,
     output: { artifacts: [] },
@@ -177,7 +177,7 @@ function applyStagePatch(
         id: patch.id ?? s.id,
         description: (patch as { description?: string }).description ?? s.description,
         agent: (patch as { agent?: string }).agent ?? s.agent,
-        depends_on: (patch as { dependsOn?: string[] }).dependsOn ?? s.depends_on,
+        depends_on: (patch as { dependsOn?: string[] }).dependsOn ?? (Array.isArray(s.depends_on) ? s.depends_on : []),
         execution: {
           ...s.execution,
           mode: (patch as { executionMode?: string }).executionMode as typeof s.execution.mode ?? s.execution.mode,
@@ -242,7 +242,8 @@ export function WorkflowEditorPage() {
     const stageIds = new Set(stages.map((s) => s.id));
     const result: Edge[] = [];
     for (const stage of stages) {
-      for (const dep of stage.depends_on) {
+      const deps = Array.isArray(stage.depends_on) ? stage.depends_on : [];
+      for (const dep of deps) {
         if (stageIds.has(dep)) {
           result.push({
             id: `${dep}-${stage.id}`,

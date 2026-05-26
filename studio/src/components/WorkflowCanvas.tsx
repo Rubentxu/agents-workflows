@@ -75,7 +75,8 @@ export function WorkflowCanvas({ onNodeSelect }: WorkflowCanvasProps) {
     const edges: Edge[] = [];
 
     workflow.stages.forEach((stage) => {
-      stage.depends_on.forEach((depId) => {
+      const deps = Array.isArray(stage.depends_on) ? stage.depends_on : [];
+      deps.forEach((depId) => {
         edges.push({
           id: `${depId}-${stage.id}`,
           source: depId,

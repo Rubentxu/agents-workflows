@@ -11,6 +11,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { useExecutionApi } from '@/hooks/useExecutionApi';
+import { mcpRequest, parseToolResult } from '@/hooks/mcpClient';
 import { LoadingState } from '@/components/states/LoadingState';
 import { EmptyState } from '@/components/states/EmptyState';
 import { ErrorState } from '@/components/states/ErrorState';
@@ -55,10 +56,62 @@ const STATUS_DOT_COLORS: Record<string, string> = {
   skipped: 'var(--color-secondary)',
 };
 
+function deriveExecutionLogs(
+  detail: Awaited<ReturnType<ReturnType<typeof useExecutionApi>['getExecution']>>,
+  fallbackStartedAt: string,
+  fallbackUpdatedAt: string,
+): LogEntry[] {
+  if (!detail) return [];
+
+  const startedAt = detail.started_at ?? fallbackStartedAt;
+  const updatedAt = detail.completed_at ?? fallbackUpdatedAt;
+  const stageOutputs = detail.stage_outputs ?? {};
+  const logs: LogEntry[] = [];
+
+  if (detail.started_at) {
+    logs.push({
+      timestamp: startedAt,
+      level: 'info',
+      message: 'Execution started',
+    });
+  }
+
+  for (const stageId of detail.completed_stages ?? []) {
+    logs.push({
+      timestamp: updatedAt,
+      level: 'info',
+      message: 'Stage completed',
+      stage: stageId,
+    });
+  }
+
+  if (detail.current_stage) {
+    logs.push({
+      timestamp: updatedAt,
+      level: 'info',
+      message: 'Stage running',
+      stage: detail.current_stage,
+    });
+  }
+
+  for (const [stageId, output] of Object.entries(stageOutputs)) {
+    if (!output || typeof output !== 'object' || !('error' in output)) continue;
+    const error = (output as { error?: unknown }).error;
+    logs.push({
+      timestamp: updatedAt,
+      level: 'error',
+      message: typeof error === 'string' && error.length > 0 ? error : 'Stage failed',
+      stage: stageId,
+    });
+  }
+
+  return logs;
+}
+
 export function AgentExecutionDetailPage() {
   const { projectId, executionId } = useParams();
   const navigate = useNavigate();
-  const { listExecutions } = useExecutionApi();
+  const { listExecutions, getExecution } = useExecutionApi();
 
   const [execution, setExecution] = useState<AgentExecutionRow | null>(null);
   const [graph, setGraph] = useState<ExecutionGraph | null>(null);
@@ -74,51 +127,101 @@ export function AgentExecutionDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const all = await listExecutions({ limit: 100 });
-      const exec = all.find((e) => e.id === executionId);
+      const execDetail = await getExecution(executionId);
+      const exec = execDetail
+        ? {
+            id: execDetail.arn,
+            agentArn: execDetail.arn,
+            workflowArn: execDetail.workflow_arn,
+            workspaceName: execDetail.workspace_id,
+            status: (execDetail.status ?? 'pending') as AgentExecutionRow['status'],
+            durationMs:
+              execDetail.started_at && execDetail.completed_at
+                ? Math.max(new Date(execDetail.completed_at).getTime() - new Date(execDetail.started_at).getTime(), 0)
+                : undefined,
+            startedAt: execDetail.started_at ?? new Date(0).toISOString(),
+            updatedAt: execDetail.completed_at ?? execDetail.started_at ?? new Date(0).toISOString(),
+          }
+        : (await listExecutions({ limit: 100 })).find((e) => e.id === executionId);
       if (!exec) {
         setError('Execution not found');
         return;
       }
       setExecution(exec);
 
-      const mockGraph: ExecutionGraph = {
-        nodes: [
-          { id: '1', stageId: 'explore', status: 'completed', durationMs: 1200, startedAt: exec.startedAt, completedAt: new Date(new Date(exec.startedAt).getTime() + 1200).toISOString() },
-          { id: '2', stageId: 'propose', status: 'completed', durationMs: 800, startedAt: new Date(new Date(exec.startedAt).getTime() + 1300).toISOString(), completedAt: new Date(new Date(exec.startedAt).getTime() + 2100).toISOString() },
-          { id: '3', stageId: 'spec', status: exec.status === 'failed' ? 'failed' : 'completed', durationMs: 3400, startedAt: new Date(new Date(exec.startedAt).getTime() + 2200).toISOString(), completedAt: new Date(new Date(exec.startedAt).getTime() + 5600).toISOString(), error: exec.status === 'failed' ? 'Spec validation error: missing required field "input"' : undefined },
-          { id: '4', stageId: 'apply', status: 'pending', startedAt: undefined, completedAt: undefined },
-        ],
-        edges: [
-          { from: '1', to: '2' },
-          { from: '2', to: '3' },
-          { from: '3', to: '4' },
-        ],
-      };
-      setGraph(mockGraph);
+      try {
+        const detail = execDetail ?? await getExecution(executionId);
+        if (!detail) {
+          setGraph(null);
+          return;
+        }
+        const completedStages: string[] = detail.completed_stages ?? [];
+        const pendingStages: string[] = detail.pending_stages ?? [];
+        const currentStage = detail.current_stage;
+        const stageOutputs = detail.stage_outputs ?? {};
 
-      const mockLogs: LogEntry[] = [
-        { timestamp: exec.startedAt, level: 'info', message: 'Execution started', stage: 'explore' },
-        { timestamp: new Date(new Date(exec.startedAt).getTime() + 100).toISOString(), level: 'debug', message: 'Loading workflow definition from registry', stage: 'explore' },
-        { timestamp: new Date(new Date(exec.startedAt).getTime() + 300).toISOString(), level: 'info', message: 'Exploring codebase structure', stage: 'explore' },
-        { timestamp: new Date(new Date(exec.startedAt).getTime() + 800).toISOString(), level: 'info', message: 'Found 12 relevant files', stage: 'explore' },
-        { timestamp: new Date(new Date(exec.startedAt).getTime() + 1200).toISOString(), level: 'info', message: 'Stage completed successfully', stage: 'explore' },
-        { timestamp: new Date(new Date(exec.startedAt).getTime() + 1300).toISOString(), level: 'info', message: 'Starting propose stage', stage: 'propose' },
-        { timestamp: new Date(new Date(exec.startedAt).getTime() + 1500).toISOString(), level: 'debug', message: 'Analyzing patterns and generating proposals', stage: 'propose' },
-        { timestamp: new Date(new Date(exec.startedAt).getTime() + 2000).toISOString(), level: 'warn', message: 'High complexity detected in module X', stage: 'propose' },
-        { timestamp: new Date(new Date(exec.startedAt).getTime() + 2100).toISOString(), level: 'info', message: 'Propose stage completed', stage: 'propose' },
-        { timestamp: new Date(new Date(exec.startedAt).getTime() + 2200).toISOString(), level: 'info', message: 'Starting spec stage', stage: 'spec' },
-        { timestamp: new Date(new Date(exec.startedAt).getTime() + 2500).toISOString(), level: 'info', message: 'Validating specifications', stage: 'spec' },
-        { timestamp: new Date(new Date(exec.startedAt).getTime() + 3000).toISOString(), level: 'error', message: 'Spec validation error: missing required field "input"', stage: 'spec' },
-        { timestamp: new Date(new Date(exec.startedAt).getTime() + 3400).toISOString(), level: 'error', message: 'Stage failed with validation error', stage: 'spec' },
-      ];
-      setLogs(mockLogs);
+        setLogs(deriveExecutionLogs(detail, exec.startedAt, exec.updatedAt));
+
+        // Fetch workflow DAG via MCP
+        let dagNodes: Array<{ id: string; stage: string; depends_on: string[] }> = [];
+        let dagEdges: Array<{ from: string; to: string }> = [];
+        try {
+          const dagResult = await mcpRequest('tools/call', {
+            name: 'workflow_get_dag',
+            arguments: { arn: exec.workflowArn },
+          }) as { content?: { text: string }[] };
+          const dag = parseToolResult(dagResult, '{}') as {
+            nodes?: Array<{ id: string; stage: string; depends_on: string[] }>;
+            edges?: Array<{ from: string; to: string }>;
+          };
+          dagNodes = dag?.nodes ?? [];
+          dagEdges = dag?.edges ?? [];
+        } catch {
+          // DAG fetch failed — will show empty graph
+        }
+
+        if (dagNodes.length > 0) {
+          // Build graph from DAG + execution data
+          const realGraph: ExecutionGraph = {
+            nodes: dagNodes.map((n) => {
+              let status: StageExecutionNode['status'] = 'pending';
+              if (completedStages.includes(n.stage)) {
+                status = 'completed';
+              } else if (pendingStages.includes(n.stage)) {
+                status = 'pending';
+              } else if (currentStage === n.stage) {
+                status = 'running';
+              }
+              // Check for failed status from stage outputs
+              const output = stageOutputs[n.stage];
+              const hasError = output && typeof output === 'object' && 'error' in (output as Record<string, unknown>);
+              if (hasError && status !== 'completed') {
+                status = 'failed';
+              }
+              return {
+                id: n.id,
+                stageId: n.stage,
+                status,
+              };
+            }),
+            edges: dagEdges.map((e) => ({ from: e.from, to: e.to })),
+          };
+          setGraph(realGraph);
+        } else {
+          // No DAG data available — leave graph as null for empty state
+          setGraph(null);
+        }
+      } catch {
+        // Execution detail MCP call failed — leave graph as null for empty state
+        setGraph(null);
+      }
+
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load execution');
     } finally {
       setLoading(false);
     }
-  }, [executionId, listExecutions]);
+  }, [executionId, listExecutions, getExecution]);
 
   useEffect(() => { fetchExecution(); }, [fetchExecution]);
 
@@ -249,6 +352,16 @@ export function AgentExecutionDetailPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {execution?.startedAt && (
+            <span className="text-xs font-mono" style={{ color: 'var(--color-secondary)' }}>
+              Started {new Date(execution.startedAt).toLocaleString()}
+            </span>
+          )}
+          {execution?.updatedAt && execution.updatedAt !== execution.startedAt && (
+            <span className="text-xs font-mono" style={{ color: 'var(--color-secondary)' }}>
+              Completed {new Date(execution.updatedAt).toLocaleString()}
+            </span>
+          )}
           {execution?.durationMs && (
             <span className="text-xs font-mono" style={{ color: 'var(--color-secondary)' }}>
               {formatDuration(execution.durationMs)}
@@ -406,15 +519,44 @@ export function AgentExecutionDetailPage() {
 
         {activeTab === 'graph' && (
           <div className="h-full" style={{ background: 'var(--color-background)' }}>
-            <ReactFlow
-              nodes={rfNodes}
-              edges={rfEdges}
-              fitView
-            >
-              <Background gap={16} color="var(--color-outline-variant)" />
-              <Controls />
-              <MiniMap />
-            </ReactFlow>
+            {graph === null ? (
+              <div className="flex items-center justify-center h-full p-6">
+                <EmptyState
+                  icon={
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+                      <path d="M10 7v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                      <circle cx="10" cy="13.5" r="0.75" fill="currentColor" />
+                    </svg>
+                  }
+                  title="No execution graph data"
+                  description="Execution DAG data is not available for this execution. The workflow may not have a DAG definition, or the data has not been generated yet."
+                />
+              </div>
+            ) : rfNodes.length === 0 ? (
+              <div className="flex items-center justify-center h-full p-6">
+                <EmptyState
+                  icon={
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                      <rect x="3" y="2" width="14" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                      <path d="M7 6h6M7 9h6M7 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  }
+                  title="No stages in graph"
+                  description="The workflow DAG has no stages to display."
+                />
+              </div>
+            ) : (
+              <ReactFlow
+                nodes={rfNodes}
+                edges={rfEdges}
+                fitView
+              >
+                <Background gap={16} color="var(--color-outline-variant)" />
+                <Controls />
+                <MiniMap />
+              </ReactFlow>
+            )}
           </div>
         )}
 
@@ -530,11 +672,26 @@ export function AgentExecutionDetailPage() {
 
         {activeTab === 'logs' && (
           <div style={{ height: '100%' }}>
-            <LogViewer
-              executionId={executionId ?? ''}
-              logs={logs}
-              loading={logsLoading}
-            />
+            {logs.length > 0 ? (
+              <LogViewer
+                executionId={executionId ?? ''}
+                logs={logs}
+                loading={logsLoading}
+              />
+            ) : (
+              <div className="p-6">
+                <EmptyState
+                  icon={
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                      <rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                      <path d="M6 8h8M6 11h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  }
+                  title="No logs available for this execution"
+                  description="This execution does not expose stage log data."
+                />
+              </div>
+            )}
           </div>
         )}
 

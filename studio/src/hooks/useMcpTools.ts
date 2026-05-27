@@ -118,7 +118,7 @@ export function useMcpTools() {
   /**
    * List all nodes in registry, optionally filtered by type.
    */
-  const listNodes = useCallback(async (nodeType?: string): Promise<RegistryNode[]> => {
+  const listNodes = useCallback(async (nodeType?: string, options?: { throwOnError?: boolean }): Promise<RegistryNode[]> => {
     setLoading(true);
     setError(null);
     try {
@@ -126,12 +126,18 @@ export function useMcpTools() {
         name: 'list_nodes',
         arguments: nodeType ? { node_type: nodeType } : {},
       }) as { content: { text: string }[] };
-      const nodes = parseToolResult(result) as RegistryNode[];
+      const nodes = (parseToolResult(result) as Array<RegistryNode & { node_type?: string }>).map((node) => ({
+        ...node,
+        type: node.type ?? node.node_type ?? 'resource',
+      }));
       setNodes(nodes);
       return nodes;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to list nodes';
       setError(message);
+      if (options?.throwOnError) {
+        throw err instanceof Error ? err : new Error(message);
+      }
       return [];
     } finally {
       setLoading(false);
@@ -269,6 +275,35 @@ export function useMcpTools() {
     }
   }, [fetchRegistryList]);
 
+  /**
+   * List edges (dependencies) between registry nodes via MCP.
+   */
+  const listEdges = useCallback(async (filters?: {
+    node_type?: string;
+    relationship_type?: string;
+    limit?: number;
+  }, options?: { throwOnError?: boolean }): Promise<Array<{ from_id: string; to_id: string; relationship_type: string }>> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await mcpRequest('tools/call', {
+        name: 'list_edges',
+        arguments: filters ?? {},
+      }) as { content?: { text: string }[] };
+      const edges = parseToolResult(result) as Array<{ from_id: string; to_id: string; relationship_type: string }>;
+      return edges;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to list edges';
+      setError(message);
+      if (options?.throwOnError) {
+        throw err instanceof Error ? err : new Error(message);
+      }
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   return {
     loading,
     error,
@@ -276,6 +311,7 @@ export function useMcpTools() {
     getWorkflow,
     generateExecutionPlan,
     listNodes,
+    listEdges,
     getResourceByArn,
     listAgents,
     listSkills,

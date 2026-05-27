@@ -7,6 +7,21 @@
 import { useCallback, useState } from 'react';
 import type { AgentExecutionRow, ArtifactRow } from '@/types/dashboard';
 import { restApiUrl } from '@/lib/apiBase';
+import { mcpRequest, parseToolResult } from '@/hooks/mcpClient';
+
+export interface ExecutionDetail {
+  arn: string;
+  workflow_arn: string;
+  workspace_id: string;
+  status: string;
+  current_stage?: string;
+  completed_stages: string[];
+  pending_stages: string[];
+  stage_outputs: Record<string, unknown>;
+  triggered_by?: unknown;
+  started_at?: string;
+  completed_at?: string;
+}
 
 export function useExecutionApi() {
   const [loading, setLoading] = useState(false);
@@ -108,5 +123,23 @@ export function useExecutionApi() {
     }
   }, []);
 
-  return { loading, error, listExecutions, listArtifacts };
+  const getExecution = useCallback(async (arn: string): Promise<ExecutionDetail | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await mcpRequest('tools/call', {
+        name: 'execution_get',
+        arguments: { arn },
+      }) as { content?: { text: string }[] };
+      return parseToolResult(result, '{}') as ExecutionDetail;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to get execution';
+      setError(message);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { loading, error, listExecutions, listArtifacts, getExecution };
 }

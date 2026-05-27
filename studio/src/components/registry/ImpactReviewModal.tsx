@@ -13,7 +13,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { MockImpactAnalyzer } from './MockImpactAnalyzer';
+import { McpImpactAnalyzer } from './McpImpactAnalyzer';
 import type { ImpactData } from './ImpactAnalyzer';
 
 export type { ImpactData };
@@ -240,11 +240,10 @@ export function ImpactReviewModal({ isOpen, onClose, onConfirm, impact, action }
 
 /**
  * Hook to get impact data for a resource.
- * Uses MockImpactAnalyzer in development — swap for McpImpactAnalyzer in production
- * by changing the import below.
+ * Uses McpImpactAnalyzer to fetch real dependency data from the MCP server.
  */
 export function useImpactReview() {
-  const analyzer = new MockImpactAnalyzer();
+  const analyzer = new McpImpactAnalyzer();
 
   const getImpact = async (arn: string, kind: string) => {
     return analyzer.analyze(arn, kind);

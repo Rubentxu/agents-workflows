@@ -141,24 +141,24 @@ export function RegistryPage({ section }: { section?: string }) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant">
+      <div className="flex flex-col gap-4 border-b border-outline-variant px-4 py-4 sm:px-6 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-lg font-semibold text-on-surface">{heading}</h1>
           <p className="text-sm text-secondary mt-0.5">
             {projectId ? `Project: ${projectId} · ${subtitle}` : subtitle}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <button
             onClick={fetchAll}
             disabled={loading}
-            className="px-3 py-1.5 text-xs border border-outline rounded hover:bg-surface-container transition-colors text-secondary"
+            className="w-full rounded border border-outline px-3 py-2 text-sm text-secondary transition-colors hover:bg-surface-container sm:w-auto"
           >
             {loading ? 'Loading...' : 'Refresh'}
           </button>
           <button
             onClick={() => navigate(`?arn=${encodeURIComponent('')}`)}
-            className="px-4 py-2 bg-primary text-on-primary text-sm font-medium rounded hover:bg-primary/90 transition-colors"
+            className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary transition-colors hover:bg-primary/90 sm:w-auto"
           >
             Create resource
           </button>
@@ -166,14 +166,19 @@ export function RegistryPage({ section }: { section?: string }) {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-outline-variant bg-surface-container/50">
+      <div className="flex flex-col gap-3 border-b border-outline-variant bg-surface-container/50 px-4 py-3 sm:px-6 lg:flex-row lg:items-center">
         {/* Search */}
+        <label htmlFor="registry-search" className="sr-only">
+          Search resources
+        </label>
         <input
+          id="registry-search"
           type="text"
           placeholder="Search resources..."
           value={filters.query}
           onChange={(e) => setFilters({ query: e.target.value })}
-          className="flex-1 max-w-xs text-sm bg-surface border border-outline-variant rounded px-3 py-1.5 text-on-surface placeholder:text-secondary outline-none focus:border-primary"
+          aria-label="Search resources"
+          className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface placeholder:text-secondary outline-none focus:border-primary lg:max-w-xs"
         />
 
         {/* Kind filter */}
@@ -181,7 +186,7 @@ export function RegistryPage({ section }: { section?: string }) {
           aria-label="Filter resources by kind"
           value={filters.kind}
           onChange={(e) => setFilters({ kind: e.target.value as typeof filters.kind })}
-          className="text-sm bg-surface border border-outline-variant rounded px-3 py-1.5 text-secondary outline-none focus:border-primary"
+          className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-secondary outline-none focus:border-primary sm:w-auto"
         >
           <option value="all">All kinds</option>
           <option value="workflow">Workflows</option>
@@ -198,7 +203,7 @@ export function RegistryPage({ section }: { section?: string }) {
           aria-label="Filter resources by scope"
           value={filters.scope}
           onChange={(e) => setFilters({ scope: e.target.value })}
-          className="text-sm bg-surface border border-outline-variant rounded px-3 py-1.5 text-secondary outline-none focus:border-primary"
+          className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-secondary outline-none focus:border-primary sm:w-auto"
         >
           <option value="all">All scopes</option>
           <option value="global">Global</option>
@@ -208,15 +213,15 @@ export function RegistryPage({ section }: { section?: string }) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" aria-busy={loading}>
         {pageMode === 'overrides' && (
-          <div className="mx-6 mt-4 rounded-lg border border-info/20 bg-info/5 px-4 py-3 text-sm text-secondary">
+          <div className="mx-4 mt-4 rounded-lg border border-info/20 bg-info/5 px-4 py-3 text-sm text-secondary sm:mx-6">
             This view currently approximates overrides by showing non-global resources. True origin/override lineage is not yet surfaced here.
           </div>
         )}
 
         {error && (
-          <div className="mx-6 mt-4 p-4 bg-error/5 border border-primary-error/20 rounded text-error text-sm">
+          <div className="mx-4 mt-4 rounded border border-primary-error/20 bg-error/5 p-4 text-sm text-error sm:mx-6">
             {error}
           </div>
         )}
@@ -230,7 +235,7 @@ export function RegistryPage({ section }: { section?: string }) {
               : 'No resources match your filters.'}
           </div>
         ) : (
-          <div className="p-6 space-y-6">
+          <div className="space-y-6 p-4 sm:p-6">
             {typeOrder
               .filter((t) => grouped[t]?.length > 0)
               .map((type) => (
@@ -260,26 +265,26 @@ function ResourceRow({ node }: { node: RegistryNode }) {
 
   // Determine scope badge
   const scopeBadge = node.namespace.startsWith('workspace/')
-    ? { label: 'workspace', className: 'bg-secondary-container text-on-secondary-container border-secondary/40' }
+      ? { label: 'workspace', className: 'bg-secondary-container text-on-secondary-container border-secondary/50' }
     : node.namespace.startsWith('project/')
-    ? { label: 'project', className: 'bg-primary-container text-on-primary-container border-primary/40' }
-    : { label: 'global', className: 'bg-success-container text-on-success-container border-success/40' };
+    ? { label: 'project', className: 'bg-primary-container text-on-primary-container border-primary/50' }
+    : { label: 'global', className: 'bg-success-container text-on-success-container border-success/50' };
 
   return (
-    <button
-      onClick={() => navigate(`/studio/projects/${node.namespace.split('/')[1]}/registry/resource?arn=${encodeURIComponent(node.id)}`)}
-      className="w-full flex items-center gap-3 px-4 py-2.5 bg-surface border border-outline-variant rounded-lg hover:border-primary/50 hover:bg-surface-container/50 transition-all text-left group"
-    >
-      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${scopeBadge.className}`}>
-        {scopeBadge.label}
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-on-surface truncate group-hover:text-primary transition-colors">
-          {node.name}
+      <button
+        onClick={() => navigate(`/studio/projects/${node.namespace.split('/')[1]}/registry/resource?arn=${encodeURIComponent(node.id)}`)}
+        className="group flex w-full items-start gap-3 rounded-lg border border-outline-variant bg-surface px-4 py-3 text-left transition-all hover:border-primary/50 hover:bg-surface-container/50 sm:items-center"
+      >
+        <span className={`mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-[0.04em] ${scopeBadge.className}`}>
+          {scopeBadge.label}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="break-words text-sm font-medium text-on-surface transition-colors group-hover:text-primary sm:truncate">
+            {node.name}
+          </div>
+          <div className="break-all font-mono text-xs text-secondary sm:truncate">{node.id}</div>
         </div>
-        <div className="font-mono text-xs text-secondary truncate">{node.id}</div>
-      </div>
-      <span className="text-xs text-secondary capitalize">{node.type}</span>
-    </button>
+        <span className="shrink-0 text-xs text-secondary capitalize">{node.type}</span>
+      </button>
   );
 }

@@ -4,7 +4,7 @@
  */
 export function ProjectsPage() {
   return (
-    <div className="p-8">
+    <main id="main-content" className="p-6 sm:p-8" tabIndex={-1}>
       <h1 className="text-lg font-semibold text-on-surface mb-4">Projects</h1>
       <div className="space-y-2">
         <a
@@ -15,6 +15,6 @@ export function ProjectsPage() {
           <div className="text-sm text-secondary mt-1">Default project</div>
         </a>
       </div>
-    </div>
+    </main>
   );
 }

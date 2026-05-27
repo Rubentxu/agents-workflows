@@ -168,34 +168,39 @@ export function ResourceCatalogPage({
   return (
     <div className="flex flex-col h-full" data-testid={`${resourceKey}-catalog-page`}>
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant">
+      <div className="flex flex-col gap-4 border-b border-outline-variant px-4 py-4 sm:px-6 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-lg font-semibold text-on-surface">{resourceLabel}</h1>
           <p className="text-sm text-secondary mt-0.5">
             {projectId ? `Project: ${projectId}` : resourceType}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          <label htmlFor={`${resourceKey}-catalog-search-input`} className="sr-only">
+            Search {resourceLabel.toLowerCase()}
+          </label>
           <input
+            id={`${resourceKey}-catalog-search-input`}
             type="text"
             placeholder={`Search ${resourceLabel.toLowerCase()}...`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label={`Search ${resourceLabel.toLowerCase()}`}
             data-testid={`${resourceKey}-catalog-search`}
-            className="px-3 py-1.5 text-sm border border-outline rounded bg-surface text-on-surface placeholder:text-secondary/50 focus:outline-none focus:border-primary w-48"
+            className="w-full rounded border border-outline bg-surface px-3 py-2 text-sm text-on-surface placeholder:text-secondary/50 focus:border-primary focus:outline-none sm:w-56"
           />
           <button
             onClick={fetchResources}
             disabled={loading}
             data-testid={`${resourceKey}-catalog-refresh`}
-            className="px-3 py-1.5 text-xs border border-outline rounded hover:bg-surface-container text-secondary transition-colors"
+            className="w-full rounded border border-outline px-3 py-2 text-sm text-secondary transition-colors hover:bg-surface-container sm:w-auto"
           >
             {loading ? '...' : 'Refresh'}
           </button>
           <button
             onClick={() => navigate(createPath)}
             data-testid={`${resourceKey}-catalog-create`}
-            className="px-4 py-2 bg-primary text-on-primary text-sm font-medium rounded hover:bg-primary/90 transition-colors"
+            className="w-full rounded bg-primary px-4 py-2 text-sm font-medium text-on-primary transition-colors hover:bg-primary/90 sm:w-auto"
           >
             New {resourceLabel.slice(0, -1)}
           </button>
@@ -203,7 +208,7 @@ export function ResourceCatalogPage({
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-4 sm:p-6" aria-busy={loading}>
         {implementationNote && (
           <div className="mb-4 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-secondary">
             {implementationNote}
@@ -241,7 +246,7 @@ export function ResourceCatalogPage({
                 key={resource.id}
                 onClick={() => navigate(editorPath(resource.id))}
                 data-testid={`${resourceKey}-catalog-row-${toTestId(resource.name)}`}
-                className="flex items-center gap-4 px-4 py-3 bg-surface border border-outline-variant rounded-lg hover:border-primary/50 cursor-pointer group transition-all"
+                className="group flex min-h-20 items-start gap-3 rounded-lg border border-outline-variant bg-surface px-4 py-3 text-left transition-all hover:border-primary/50 sm:min-h-0 sm:items-center sm:gap-4"
               >
                 {/* Icon */}
                 <div className={`w-8 h-8 rounded flex items-center justify-center text-sm font-semibold flex-shrink-0 ${colors.bg} ${colors.text}`}>
@@ -252,15 +257,15 @@ export function ResourceCatalogPage({
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-on-surface group-hover:text-primary transition-colors truncate">
+                  <div className="break-words pr-2 text-sm font-medium text-on-surface transition-colors group-hover:text-primary sm:truncate">
                     {resource.name}
                   </div>
-                  <div className="font-mono text-xs text-secondary truncate">{resource.id}</div>
+                  <div className="break-all font-mono text-xs text-secondary sm:truncate">{resource.id}</div>
                 </div>
 
                 {/* Delete action */}
                 {deletable && (
-                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="ml-auto flex items-center gap-2 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100">
                     <button
                       onClick={(e) => handleDeleteClick(resource, e)}
                       data-testid={`${resourceKey}-catalog-delete-${toTestId(resource.name)}`}
@@ -271,7 +276,7 @@ export function ResourceCatalogPage({
                   </div>
                 )}
 
-                <span className="text-secondary text-sm opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+                <span className="hidden text-secondary text-sm opacity-0 transition-opacity sm:inline sm:group-hover:opacity-100">→</span>
               </div>
             ))}
           </div>

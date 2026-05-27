@@ -140,6 +140,70 @@ test.describe('Studio Layout — Viewport Breakpoints', () => {
     const isHiddenViaTransform = sidebarTransform !== 'none' && !sidebarTransform.includes('matrix(1, 0, 0, 1, 0, 0)');
     expect(isHiddenViaTransform, 'Sidebar should be hidden via transform in mobile').toBeTruthy();
   });
+
+  test('mobile (375px): shell does not cause horizontal overflow', async ({ page }) => {
+    await page.setViewportSize(VIEWPORTS.mobile);
+
+    await page.goto(`${BASE_URL}/studio`);
+    await page.waitForLoadState('domcontentloaded');
+    const homeWidth = await page.evaluate(() => document.body.scrollWidth);
+    expect(homeWidth).toBeLessThanOrEqual(VIEWPORTS.mobile.width);
+
+    await gotoProject(page, '/design/agents');
+    const projectWidth = await page.evaluate(() => document.body.scrollWidth);
+    expect(projectWidth).toBeLessThanOrEqual(VIEWPORTS.mobile.width);
+  });
+
+  test('mobile (375px): catalog actions stack within viewport', async ({ page }) => {
+    await page.setViewportSize(VIEWPORTS.mobile);
+    await gotoProject(page, '/design/agents');
+
+    const search = page.getByTestId('agent-catalog-search');
+    const refresh = page.getByTestId('agent-catalog-refresh');
+    const create = page.getByTestId('agent-catalog-create');
+
+    await expect(search).toBeVisible();
+    await expect(refresh).toBeVisible();
+    await expect(create).toBeVisible();
+
+    const [searchBox, refreshBox, createBox] = await Promise.all([
+      search.boundingBox(),
+      refresh.boundingBox(),
+      create.boundingBox(),
+    ]);
+
+    expect(searchBox).not.toBeNull();
+    expect(refreshBox).not.toBeNull();
+    expect(createBox).not.toBeNull();
+
+    expect(searchBox!.width).toBeLessThanOrEqual(VIEWPORTS.mobile.width - 40);
+    expect(refreshBox!.y).toBeGreaterThan(searchBox!.y);
+    expect(createBox!.y).toBeGreaterThan(refreshBox!.y);
+    expect(createBox!.x + createBox!.width).toBeLessThanOrEqual(VIEWPORTS.mobile.width);
+  });
+
+  test('mobile (375px): registry filters stack and remain usable', async ({ page }) => {
+    await page.setViewportSize(VIEWPORTS.mobile);
+    await gotoProject(page, '/registry/resources');
+
+    const search = page.getByRole('textbox', { name: 'Search resources' });
+    const kind = page.getByRole('combobox', { name: 'Filter resources by kind' });
+    const scope = page.getByRole('combobox', { name: 'Filter resources by scope' });
+
+    const [searchBox, kindBox, scopeBox] = await Promise.all([
+      search.boundingBox(),
+      kind.boundingBox(),
+      scope.boundingBox(),
+    ]);
+
+    expect(searchBox).not.toBeNull();
+    expect(kindBox).not.toBeNull();
+    expect(scopeBox).not.toBeNull();
+
+    expect(kindBox!.y).toBeGreaterThan(searchBox!.y);
+    expect(scopeBox!.y).toBeGreaterThan(kindBox!.y);
+    expect(scopeBox!.x + scopeBox!.width).toBeLessThanOrEqual(VIEWPORTS.mobile.width);
+  });
 });
 
 test.describe('Studio Layout — Mobile Sidebar Overlay', () => {
@@ -217,6 +281,14 @@ test.describe('Studio Layout — Mobile Sidebar Overlay', () => {
 
     // Page should still be functional (workflows page has workflow-catalog-page)
     await expect(page.getByTestId('workflow-catalog-page')).toBeVisible();
+  });
+
+  test('mobile: top-level projects page does not expose a dead sidebar toggle', async ({ page }) => {
+    await page.goto(`${BASE_URL}/studio`);
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.waitForLoadState('domcontentloaded');
+
+    await expect(page.getByTestId('topbar-mobile-menu-toggle')).toHaveCount(0);
   });
 });
 

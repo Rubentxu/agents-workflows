@@ -16,7 +16,7 @@ export function ProjectLayout() {
   return (
     <>
       <Sidebar activeSection={activeSection} projectId={projectId} />
-      <main role="main" className="app-shell__project-main">
+      <main id="main-content" role="main" className="app-shell__project-main" tabIndex={-1}>
         <Outlet />
       </main>
     </>

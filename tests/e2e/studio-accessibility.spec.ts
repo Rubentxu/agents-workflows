@@ -158,6 +158,30 @@ test.describe('Studio Accessibility - axe-core Scans (Phase 4.1)', () => {
 });
 
 test.describe('Studio Accessibility - Keyboard Navigation (Phase 4.2)', () => {
+  test('Skip to main content link targets the main landmark', async ({ page }) => {
+    await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/agents`);
+    await page.waitForLoadState('domcontentloaded');
+
+    const skipLink = page.getByRole('link', { name: 'Skip to main content' });
+    await expect(skipLink).toHaveAttribute('href', '#main-content');
+
+    await page.keyboard.press('Tab');
+    await expect(skipLink).toBeFocused();
+
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#main-content')).toBeFocused();
+  });
+
+  test('catalog and registry search inputs have accessible names', async ({ page }) => {
+    await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/design/agents`);
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('textbox', { name: 'Search agents' })).toBeVisible();
+
+    await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}/registry/resources`);
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('textbox', { name: 'Search resources' })).toBeVisible();
+  });
+
   test('Tab key navigates through interactive elements', async ({ page }) => {
     await page.goto(`${BASE_URL}/studio/projects/${PROJECT_ID}`);
     await page.waitForLoadState('domcontentloaded');

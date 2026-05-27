@@ -175,6 +175,7 @@ export function Sidebar({ projectId }: SidebarProps) {
         'app-shell__sidebar',
         mobileMenuOpen ? ' app-shell__sidebar--mobile-open' : '',
       ].join('')}
+      id="sidebar-navigation"
       role="navigation"
       aria-label="Main navigation"
       data-testid="sidebar-navigation"

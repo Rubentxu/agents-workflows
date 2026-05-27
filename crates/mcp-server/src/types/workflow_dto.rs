@@ -2,6 +2,7 @@
 //!
 //! These types are DTOs at the MCP/presentation boundary.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -10,7 +11,7 @@ use std::collections::HashMap;
 // ============================================================================
 
 /// Workflow summary for list operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct WorkflowSummary {
     pub arn: String,
     pub name: String,
@@ -21,7 +22,7 @@ pub struct WorkflowSummary {
 
 /// Workflow definition DTO - presentation layer representation
 /// Renamed from Workflow to WorkflowDto to avoid confusion with domain Workflow
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct WorkflowDto {
     pub arn: String,
     pub name: String,
@@ -37,7 +38,7 @@ pub struct WorkflowDto {
 
 /// Stage DTO - presentation layer representation
 /// Renamed from Stage to StageDto to avoid confusion with domain Stage
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StageDto {
     #[serde(alias = "id")]
     pub id: Option<String>,
@@ -58,34 +59,34 @@ pub struct StageDto {
 
 /// Stage output DTO - presentation layer representation
 /// Renamed from StageOutput to StageOutputDto to avoid confusion with domain StageOutput
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StageOutputDto {
     pub artifacts: Vec<ArtifactRef>,
 }
 
 /// Artifact reference in stage output
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ArtifactRef {
     pub name: String,
     pub path_template: String,
 }
 
 /// Stage execution configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StageExecution {
     pub mode: String,
     pub retry: RetryConfig,
 }
 
 /// Retry configuration for stage execution
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RetryConfig {
     pub max_attempts: usize,
     pub backoff_ms: u64,
 }
 
 /// Condition for stage execution
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Condition {
     pub when: String,
     pub operator: String,
@@ -93,7 +94,7 @@ pub struct Condition {
 }
 
 /// Execution configuration for workflow
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ExecutionConfig {
     pub mode: String,
     #[serde(alias = "onFailure")]
@@ -105,7 +106,7 @@ pub struct ExecutionConfig {
 // ============================================================================
 
 /// DAG representation of workflow stages
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Dag {
     pub nodes: Vec<DagNode>,
     pub edges: Vec<DagEdge>,
@@ -113,7 +114,7 @@ pub struct Dag {
 }
 
 /// Node in the DAG
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DagNode {
     pub id: String,
     pub stage: String,
@@ -121,7 +122,7 @@ pub struct DagNode {
 }
 
 /// Edge in the DAG (dependency)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DagEdge {
     pub from: String,
     pub to: String,

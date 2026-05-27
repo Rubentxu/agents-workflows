@@ -1,5 +1,6 @@
 //! Impact Analysis Types for MCP API
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -7,7 +8,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Impact item - a resource affected by an action
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ImpactItem {
     pub id: String,
     pub label: String,
@@ -16,7 +17,7 @@ pub struct ImpactItem {
 }
 
 /// Recent execution record
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RecentExecution {
     pub id: String,
     pub status: String,
@@ -26,7 +27,7 @@ pub struct RecentExecution {
 }
 
 /// Full impact analysis data
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ImpactData {
     #[serde(rename = "resourceArn")]
     pub resource_arn: String,

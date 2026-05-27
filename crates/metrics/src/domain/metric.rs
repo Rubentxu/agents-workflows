@@ -12,6 +12,7 @@ pub enum MetricEventType {
     Failed,
     Progress,
     ArtifactCreated,
+    ToolCall,
 }
 
 /// Metric event for execution monitoring
@@ -61,6 +62,11 @@ impl MetricEvent {
 
     pub fn with_error(mut self, error: String) -> Self {
         self.metrics.errors = Some(vec![error]);
+        self
+    }
+
+    pub fn with_custom(mut self, custom: serde_json::Value) -> Self {
+        self.metrics.custom = Some(custom);
         self
     }
 }

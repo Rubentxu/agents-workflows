@@ -1,5 +1,6 @@
 //! Skill Types for MCP API
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -7,7 +8,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Skill summary for list operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SkillSummary {
     pub arn: String,
     pub name: String,
@@ -16,7 +17,7 @@ pub struct SkillSummary {
 }
 
 /// Skill DTO - full representation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SkillDto {
     pub arn: String,
     pub name: String,

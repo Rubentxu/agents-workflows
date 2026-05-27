@@ -2,6 +2,7 @@
 //!
 //! These types are DTOs at the MCP/presentation boundary.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -12,7 +13,7 @@ use super::workflow_dto::StageOutputDto;
 // ============================================================================
 
 /// Execution summary for list operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ExecutionSummary {
     pub arn: String,
     pub workflow_arn: String,
@@ -24,7 +25,7 @@ pub struct ExecutionSummary {
 
 /// Execution DTO - presentation layer representation
 /// Note: This is a flat representation used in API responses
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ExecutionDto {
     pub arn: String,
     pub workflow_arn: String,
@@ -42,7 +43,7 @@ pub struct ExecutionDto {
 /// Trigger info DTO - presentation layer representation
 /// Renamed from TriggerInfo to TriggerInfoDto to avoid confusion with domain TriggerInfo
 /// This type includes the `source` field which was previously missing in the MCP layer
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TriggerInfoDto {
     #[serde(rename = "type")]
     pub trigger_type: String,
@@ -65,7 +66,7 @@ impl Default for TriggerInfoDto {
 
 /// Execution state DTO - presentation layer representation
 /// Renamed from ExecutionState to ExecutionStateDto to avoid confusion with domain ExecutionState
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ExecutionStateDto {
     pub execution_arn: String,
     pub workflow_arn: String,
@@ -78,7 +79,7 @@ pub struct ExecutionStateDto {
 }
 
 /// Next stage suggestion
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct NextStage {
     pub suggested_stage: String,
     pub conditions_met: bool,
@@ -86,7 +87,7 @@ pub struct NextStage {
 }
 
 /// Alternative stage suggestion
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StageAlternative {
     pub stage: String,
     pub condition: String,

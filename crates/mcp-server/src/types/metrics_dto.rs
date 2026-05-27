@@ -1,5 +1,6 @@
 //! Metrics Types for MCP API
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -7,7 +8,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Metrics response DTO
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MetricsResponse {
     pub execution_arn: String,
     pub metrics: Vec<StageMetrics>,
@@ -16,7 +17,7 @@ pub struct MetricsResponse {
 }
 
 /// Stage metrics DTO
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StageMetrics {
     pub stage_id: String,
     pub status: String,
@@ -27,7 +28,7 @@ pub struct StageMetrics {
 }
 
 /// SSE URL for metrics subscription
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SseUrl {
     pub url: String,
 }

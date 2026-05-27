@@ -9,6 +9,7 @@ members = [
     "crates/mcp-server",
     "crates/schema",
     "crates/validation",
+    "tests/mcp-protocol",
 ]
 
 [workspace.package]

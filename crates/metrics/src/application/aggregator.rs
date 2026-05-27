@@ -53,6 +53,12 @@ impl MetricsAggregator {
                     }
                 }
             }
+            MetricEventType::ToolCall => {
+                let mut metrics = self.stage_metrics.write();
+                if let Some(stage) = metrics.get_mut(&event.stage_id) {
+                    stage.tool_invocations += 1;
+                }
+            }
         }
     }
 

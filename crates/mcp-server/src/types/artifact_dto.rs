@@ -1,5 +1,6 @@
 //! Artifact Types for MCP API
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -7,7 +8,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Artifact summary for list operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ArtifactSummary {
     pub arn: String,
     pub execution_arn: String,
@@ -17,7 +18,7 @@ pub struct ArtifactSummary {
 }
 
 /// Artifact DTO - full representation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ArtifactDto {
     pub arn: String,
     pub execution_arn: String,

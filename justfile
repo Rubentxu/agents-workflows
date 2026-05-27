@@ -56,6 +56,14 @@ default:
     @echo "  just dev-refresh         Rebuild Studio + embed backend + restart local server"
     @echo "  just dev-watch           Watch mode (rebuild on changes)"
     @echo ""
+    @echo "=== MCP SERVICE (background daemon for opencode IDE tools) ==="
+    @echo "  just mcp-install         Install MCP server as systemd --user service"
+    @echo "  just mcp-start           Start MCP server via systemd"
+    @echo "  just mcp-stop            Stop MCP server"
+    @echo "  just mcp-restart         Restart MCP server (after rebuild)"
+    @echo "  just mcp-status          Show MCP server status"
+    @echo "  just mcp-logs            Tail MCP server logs"
+    @echo ""
     @echo "=== DEVELOPMENT + QUADLET (Best of both) ==="
     @echo "  just dev-quadlet-enable  Install quadlet for AUTO-START at boot"
     @echo "  just dev-quadlet-user    Install quadlet at user level"
@@ -646,3 +654,167 @@ test_ci test_tag="":
         exit 1; \
     fi
     just {{test_tag}}
+
+# =============================================================================
+# MCP Service (background daemon)
+# =============================================================================
+# Manages the MCP server as a systemd --user service so it stays available
+# for opencode IDE tools between dev sessions.
+#
+# The MCP server is registered in ~/.config/opencode/opencode.json as
+# a `remote` MCP server at http://localhost:8080/mcp.
+# -----------------------------------------------------------------------------
+
+# Install MCP server as systemd --user service
+mcp-install:
+    @echo "Installing MCP server systemd user service..."
+    mkdir -p {{ USER_SYSTEMD_DIR }}
+    BINARY={{ TARGET_BINARY }} WORKSPACE={{ WORKSPACE_DIR }} envsubst < {{ ROOT }}/agents-workflows.service.template > {{ USER_SYSTEMD_DIR }}/agents-workflows.service
+    systemctl --user daemon-reload
+    @echo ""
+    @echo "✓ Service unit installed at {{ USER_SYSTEMD_DIR }}/agents-workflows.service"
+    @echo "  Run 'just mcp-start' to start it."
+    @echo "  Run 'just mcp-enable' to auto-start at login."
+
+# Enable MCP server to auto-start at login
+mcp-enable:
+    systemctl --user enable agents-workflows.service
+    @echo "✓ MCP server will auto-start at login"
+
+# Disable MCP server auto-start
+mcp-disable:
+    systemctl --user disable agents-workflows.service
+    @echo "MCP server will not auto-start at login"
+
+# Start MCP server
+mcp-start:
+    systemctl --user start agents-workflows.service
+    sleep 2
+    @echo "✓ MCP server started (http://localhost:{{ MCP_PORT }}/mcp)"
+
+# Stop MCP server
+mcp-stop:
+    -systemctl --user stop agents-workflows.service 2>/dev/null || true
+    -fuser -k {{ MCP_PORT }}/tcp 2>/dev/null || true
+    -fuser -k {{ REST_PORT }}/tcp 2>/dev/null || true
+    @echo "MCP server stopped"
+
+# Restart MCP server (run after rebuilding the binary)
+mcp-restart: kill-server mcp-start
+    @echo "✓ MCP server restarted"
+
+# Show MCP server status
+mcp-status:
+    @echo "=== MCP Server ==="
+    @-systemctl --user status agents-workflows.service --no-pager 2>/dev/null || echo "  Not installed"
+    @echo ""
+    @echo "=== MCP Endpoint ==="
+    @-curl -s -o /dev/null -w "  http://localhost:{{ MCP_PORT }}/mcp -> HTTP %{http_code}\n" http://localhost:{{ MCP_PORT }}/mcp 2>/dev/null || echo "  Not responding"
+    @echo ""
+    @echo "=== REST API ==="
+    @-curl -s http://localhost:{{ REST_PORT }}/api/health 2>/dev/null || echo "  Not available"
+    @echo ""
+    @echo "=== opencode Integration ==="
+    @echo "  Registered as: agents-workflows (remote) in ~/.config/opencode/opencode.json"
+    @echo "  Requires: opencode restart to take effect"
+
+# Tail MCP server logs
+mcp-logs:
+    journalctl --user -u agents-workflows.service -f
+
+# =============================================================================
+# MCP Tool CLI
+# =============================================================================
+
+# Interactive MCP tool REPL
+tool:
+    #!/bin/bash
+    set -euo pipefail
+    PORT="${MCP_PORT:-8080}"
+    echo "MCP Tool REPL — connecting to localhost:$PORT"
+    echo "Available tools: workflow_list, workflow_get, workflow_get_dag, ..."
+    echo "Type 'exit' to quit"
+    echo ""
+    while true; do
+        read -r -p "> " cmd args
+        [ "$cmd" = "exit" ] && break
+        curl -s -X POST "http://localhost:$PORT/mcp" \
+            -H "Content-Type: application/json" \
+            -d "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"$cmd\",\"arguments\":$args},\"id\":1}" \
+        | jq .
+        echo ""
+    done
+
+# List all MCP tools
+tool-list:
+    curl -s -X POST "http://localhost:${MCP_PORT:-8080}/mcp" \
+        -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","method":"tools/list","params":{},"id":1}' \
+        | jq .
+
+# List all workflows via MCP
+tool-workflow-list:
+    curl -s -X POST "http://localhost:${MCP_PORT:-8080}/mcp" \
+        -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"workflow_list","arguments":{}},"id":1}' \
+        | jq .
+
+# Get a workflow by ARN
+# Usage: just tool-workflow-get '{"arn":"arn:local:global:workflow/sdd-full"}'
+tool-workflow-get:
+    #!/bin/bash
+    curl -s -X POST "http://localhost:${MCP_PORT:-8080}/mcp" \
+        -H "Content-Type: application/json" \
+        -d "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"workflow_get\",\"arguments\":$1},\"id\":1}" \
+        | jq .
+
+# List all agents via MCP
+tool-agent-list:
+    curl -s -X POST "http://localhost:${MCP_PORT:-8080}/mcp" \
+        -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"agent_list","arguments":{}},"id":1}' \
+        | jq .
+
+# List all skills via MCP
+tool-skill-list:
+    curl -s -X POST "http://localhost:${MCP_PORT:-8080}/mcp" \
+        -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"skill_list","arguments":{}},"id":1}' \
+        | jq .
+
+# =============================================================================
+# Seed Data
+# =============================================================================
+
+# Copy seed YAML resources to the workspace directories and register them
+# by starting the server briefly.
+seed: seed-copy seed-start-rest
+    @echo "Seeding complete."
+
+# Copy seed YAML files to their respective workspace directories
+seed-copy:
+    @echo "Copying seed resources to workspace..."
+    mkdir -p {{ WORKSPACE_DIR }}/global/workflows
+    mkdir -p {{ WORKSPACE_DIR }}/global/agents
+    mkdir -p {{ WORKSPACE_DIR }}/global/skills
+    mkdir -p {{ WORKSPACE_DIR }}/global/prompts
+    mkdir -p {{ WORKSPACE_DIR }}/global/tools
+    cp {{ ROOT }}/crates/mcp-server/src/resources/seed/workflow-seed-echo.yaml {{ WORKSPACE_DIR }}/global/workflows/
+    cp {{ ROOT }}/crates/mcp-server/src/resources/seed/agent-seed-debugger.yaml {{ WORKSPACE_DIR }}/global/agents/
+    cp {{ ROOT }}/crates/mcp-server/src/resources/seed/skill-seed-code-review.yaml {{ WORKSPACE_DIR }}/global/skills/
+    cp {{ ROOT }}/crates/mcp-server/src/resources/seed/prompt-seed-system.yaml {{ WORKSPACE_DIR }}/global/prompts/
+    cp {{ ROOT }}/crates/mcp-server/src/resources/seed/tool-seed-validate.yaml {{ WORKSPACE_DIR }}/global/tools/
+    @echo "Seed YAML files copied to workspace."
+
+# Start server, let it register the seed resources, then stop
+seed-start-rest:
+    #!/bin/bash
+    set -euo pipefail
+    echo "Starting server to register seed resources..."
+    cargo run --bin workflow-mcp -- start --workspace {{ WORKSPACE_DIR }} --port {{ MCP_PORT }} &
+    SERVER_PID=$!
+    sleep 4
+    echo "Killing server (PID $SERVER_PID)..."
+    kill $SERVER_PID 2>/dev/null || true
+    wait $SERVER_PID 2>/dev/null || true
+    echo "Server stopped. Seed resources registered."

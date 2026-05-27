@@ -1,5 +1,6 @@
 //! Agent Types for MCP API
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -7,7 +8,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Agent summary for list operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AgentSummary {
     pub arn: String,
     pub name: String,
@@ -16,7 +17,7 @@ pub struct AgentSummary {
 }
 
 /// Agent DTO - full representation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AgentDto {
     pub arn: String,
     pub name: String,

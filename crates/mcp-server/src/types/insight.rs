@@ -1,5 +1,6 @@
 //! Insight and Analytics Types for MCP API
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -8,7 +9,7 @@ use std::collections::HashMap;
 // ============================================================================
 
 /// Insight record DTO
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct InsightDto {
     pub id: i64,
     pub execution_arn: String,
@@ -27,7 +28,7 @@ pub type Insight = InsightDto;
 // ============================================================================
 
 /// Execution analytics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ExecutionAnalytics {
     pub execution_id: String,
     pub total_insights: usize,
@@ -39,7 +40,7 @@ pub struct ExecutionAnalytics {
 }
 
 /// Stage analytics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StageAnalytics {
     pub execution_id: String,
     pub stage_id: String,
@@ -51,7 +52,7 @@ pub struct StageAnalytics {
 }
 
 /// Execution insight summary
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ExecutionInsightSummary {
     pub execution_id: String,
     pub workflow_started: bool,
@@ -74,7 +75,7 @@ pub struct InsightsAggregateParams {
 }
 
 /// Result of insights aggregation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type")]
 pub enum InsightsAggregateResult {
     Execution {

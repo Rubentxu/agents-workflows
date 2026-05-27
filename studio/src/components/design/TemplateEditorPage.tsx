@@ -10,6 +10,7 @@ import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import type * as Monaco from 'monaco-editor';
 import { useContent } from '@/hooks/useContent';
+import { useValidationGate } from '@/hooks/useValidationGate';
 import { useDirtyGuard } from '@/hooks/useDirtyGuard';
 import { EditorLayout, DirtyGuardDialog } from './shared';
 import { MarkdownResourceEditor } from '@/components/monaco';
@@ -17,7 +18,8 @@ import { isYamlConfigFormat, yamlConfigToMarkdown, markdownToYamlConfig } from '
 
 export function TemplateEditorPage() {
   const { projectId, templateId } = useParams();
-  const { fetchContent, updateContent, validateContent } = useContent();
+  const { fetchContent, updateContent } = useContent();
+  const { validateBeforeSave } = useValidationGate();
 
   const isNew = !templateId || templateId === 'new';
   // When editing, templateId is the full ARN (URL-encoded) passed from the catalog.
@@ -112,7 +114,7 @@ Explain how to use this template and what outputs to expect.
   }, [fetchTemplate]);
 
   // Save handler — Monaco is the single source of truth
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (): Promise<boolean> => {
     setSaving(true);
     setError(null);
 
@@ -130,21 +132,21 @@ Explain how to use this template and what outputs to expect.
         content = editors[0]?.getModel?.()?.getValue?.() ?? markdownContent;
       }
 
+      const yamlConfig = markdownToYamlConfig(content, 'Template');
+
       // Validate content before saving
-      const validation = await validateContent(arn, content);
-      if (validation && !validation.valid && validation.diagnostics.length > 0) {
-        const errorMessages = validation.diagnostics
+      const gate = await validateBeforeSave(arn, yamlConfig);
+      if (!gate.allowed) {
+        const errorMessages = gate.diagnostics
           .filter((d) => d.severity === 'error')
           .map((d) => d.message)
           .join('; ');
-        if (errorMessages) {
-          setError(`Validation errors: ${errorMessages}`);
-          setSaving(false);
-          return;
-        }
+        setError(`Validation errors: ${errorMessages}`);
+        setSaving(false);
+        return false;
       }
 
-      const success = await updateContent(arn, content);
+      const success = await updateContent(arn, yamlConfig);
       if (!success) {
         throw new Error('Failed to save template content');
       }
@@ -154,14 +156,16 @@ Explain how to use this template and what outputs to expect.
         : content;
       markClean(savedContent);
       toast.success('Template saved');
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to save template';
       setError(msg);
       toast.error(msg);
+      return false;
     } finally {
       setSaving(false);
     }
-  }, [arn, markdownContent, updateContent, validateContent]);
+  }, [arn, markdownContent, updateContent, validateBeforeSave, markClean]);
 
   // Loading state
   if (loading && !isNew) {
@@ -181,8 +185,9 @@ Explain how to use this template and what outputs to expect.
           onStay={cancelNavigation}
           onDiscard={confirmNavigation}
           onSaveAndLeave={async () => {
-            await handleSave();
-            confirmNavigation();
+            if (await handleSave()) {
+              confirmNavigation();
+            }
           }}
         />
       )}
@@ -205,12 +210,7 @@ Explain how to use this template and what outputs to expect.
             initialValue={markdownContent}
             onChange={(value) => setMarkdownContent(value)}
             editorRef={editorRef}
-            onSave={async (value) => {
-              // Transform markdown format to YAML config before saving
-              const yamlConfig = markdownToYamlConfig(value, 'Template');
-              await updateContent(arn, yamlConfig);
-              markClean(value);
-            }}
+            onSave={() => handleSave()}
           />
         </div>
       </EditorLayout>

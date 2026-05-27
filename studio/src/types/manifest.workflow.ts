@@ -28,7 +28,8 @@ export interface WorkflowSpec {
   skills?: Record<string, SkillReference>;
   execution: {
     mode: string;
-    stop_on_error: boolean;
+    stop_on_error?: boolean;
+    on_failure?: 'abort' | 'continue' | 'retry';
   };
   metrics?: {
     streaming: boolean;

@@ -46,7 +46,7 @@ describe('Workflow YAML round-trip', () => {
     ],
     execution: {
       mode: 'sequential',
-      stop_on_error: true,
+      on_failure: 'abort',
     },
     metrics: {
       streaming: true,
@@ -86,6 +86,7 @@ describe('Workflow YAML round-trip', () => {
       expect(restored.stages).toEqual(sampleWorkflow.stages);
       expect(restored.execution).toEqual(sampleWorkflow.execution);
       expect(restored.metrics).toEqual(sampleWorkflow.metrics);
+      expect(parsed.spec.execution.on_failure).toBe('abort');
     });
 
     it('round-trip: yaml → manifest → yaml produces identical YAML', () => {
@@ -178,7 +179,7 @@ describe('Workflow YAML round-trip', () => {
         spec: {
           description: 'Test description',
           stages: [],
-          execution: { mode: 'parallel', stop_on_error: false },
+          execution: { mode: 'parallel', on_failure: 'continue' },
           metrics: { streaming: false, interval_ms: 3000, channels: [] },
         },
       };
@@ -187,7 +188,30 @@ describe('Workflow YAML round-trip', () => {
       expect(result.name).toBe('my-workflow');
       expect(result.description).toBe('Test description');
       expect(result.execution.mode).toBe('parallel');
-      expect(result.execution.stop_on_error).toBe(false);
+      expect(result.execution.on_failure).toBe('continue');
+    });
+
+    it('maps on_failure continue correctly in manifestToWorkflow', () => {
+      const manifest: WorkflowManifest = {
+        apiVersion: API_VERSION,
+        kind: 'Workflow',
+        metadata: {
+          uid: 'test-uid',
+          name: 'continue-workflow',
+          scope: 'global',
+          labels: {},
+          annotations: {},
+        },
+        spec: {
+          description: 'Test description',
+          stages: [],
+          execution: { mode: 'parallel', on_failure: 'continue' },
+          metrics: { streaming: false, interval_ms: 3000, channels: [] },
+        },
+      };
+
+      const result = manifestToWorkflow(manifest);
+      expect(result.execution.on_failure).toBe('continue');
     });
 
     it('uses global scope when metadata.scope is missing', () => {
@@ -203,7 +227,7 @@ describe('Workflow YAML round-trip', () => {
         },
         spec: {
           stages: [],
-          execution: { mode: 'sequential', stop_on_error: true },
+          execution: { mode: 'sequential', on_failure: 'abort' },
         },
       };
 
@@ -224,7 +248,7 @@ describe('Workflow YAML round-trip', () => {
         },
         spec: {
           stages: [],
-          execution: { mode: 'sequential', stop_on_error: true },
+          execution: { mode: 'sequential', on_failure: 'abort' },
         },
       };
 
@@ -305,7 +329,7 @@ describe('Workflow YAML round-trip', () => {
         ],
         execution: {
           mode: 'parallel',
-          stop_on_error: false,
+          on_failure: 'continue',
         },
         metrics: {
           streaming: true,

@@ -316,7 +316,7 @@ Return JSON.
     expect(parsed.apiVersion).toBe('prompts.local/v1');
     expect(parsed.kind).toBe('Prompt');
     expect((parsed.spec as Record<string, unknown>).kind).toBe('user');
-    expect((parsed.spec as Record<string, unknown>).content).toContain('Process the following');
+    expect((parsed.spec as Record<string, unknown>).template).toContain('Process the following');
   });
 });
 
@@ -343,6 +343,8 @@ target_kind: prompt
     expect(parsed.kind).toBe('Template');
     expect((parsed.spec as Record<string, unknown>).format).toBe('json');
     expect((parsed.spec as Record<string, unknown>).target_kind).toBe('prompt');
+    // Template body should be stored in spec.manifest, not spec.content
+    expect((parsed.spec as Record<string, unknown>).manifest).toBeDefined();
   });
 });
 

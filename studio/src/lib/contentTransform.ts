@@ -172,6 +172,25 @@ export function markdownToYamlConfig(
     ...restFrontmatter
   } = frontmatterObj;
 
+  // Determine which spec field receives the body, per resource type
+  let specBodyField: string;
+  let specBodyValue: unknown = body;
+  if (kind === 'Prompt') {
+    specBodyField = 'template';
+    specBodyValue = body;
+  } else if (kind === 'Template') {
+    specBodyField = 'manifest';
+    // Template body is a YAML/JSON manifest template, parse it
+    try {
+      specBodyValue = yaml.load(body) || body;
+    } catch {
+      specBodyValue = body;
+    }
+  } else {
+    specBodyField = 'content';
+    specBodyValue = body;
+  }
+
   const config: Record<string, unknown> = {
     apiVersion: `${kind.toLowerCase()}s.local/v1`,
     kind,
@@ -195,7 +214,7 @@ export function markdownToYamlConfig(
       ...(format !== undefined && { format }),
       ...(target_kind !== undefined && { target_kind }),
       ...(template !== undefined && { template }),
-      content: body,
+      [specBodyField]: specBodyValue,
     },
   };
 

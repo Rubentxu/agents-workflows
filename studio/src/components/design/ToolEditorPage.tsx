@@ -9,13 +9,15 @@ import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import type * as Monaco from 'monaco-editor';
 import { useContent } from '@/hooks/useContent';
+import { useValidationGate } from '@/hooks/useValidationGate';
 import { useDirtyGuard } from '@/hooks/useDirtyGuard';
 import { EditorLayout, DirtyGuardDialog } from './shared';
 import { ResourceYamlEditor } from '@/components/monaco';
 
 export function ToolEditorPage() {
   const { projectId, toolId } = useParams();
-  const { fetchContent, updateContent, validateContent } = useContent();
+  const { fetchContent, updateContent } = useContent();
+  const { validateBeforeSave } = useValidationGate();
 
   const isNew = !toolId || toolId === 'new';
   // When editing, toolId is the full ARN (URL-encoded) passed from the catalog.
@@ -81,7 +83,7 @@ spec:
   }, [fetchTool]);
 
   // Save handler — Monaco YAML is the single source of truth
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (): Promise<boolean> => {
     setSaving(true);
     setError(null);
 
@@ -90,17 +92,15 @@ spec:
       const content = editorRef.current?.getValue() ?? yamlContent;
 
       // Validate content before saving
-      const validation = await validateContent(arn, content);
-      if (validation && !validation.valid && validation.diagnostics.length > 0) {
-        const errorMessages = validation.diagnostics
+      const gate = await validateBeforeSave(arn, content);
+      if (!gate.allowed) {
+        const errorMessages = gate.diagnostics
           .filter((d) => d.severity === 'error')
           .map((d) => d.message)
           .join('; ');
-        if (errorMessages) {
-          setError(`Validation errors: ${errorMessages}`);
-          setSaving(false);
-          return;
-        }
+        setError(`Validation errors: ${errorMessages}`);
+        setSaving(false);
+        return false;
       }
 
       const success = await updateContent(arn, content);
@@ -109,14 +109,16 @@ spec:
       }
       markClean(content);
       toast.success('Tool saved');
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to save tool';
       setError(msg);
       toast.error(msg);
+      return false;
     } finally {
       setSaving(false);
     }
-  }, [arn, yamlContent, updateContent, validateContent]);
+  }, [arn, yamlContent, updateContent, validateBeforeSave, markClean]);
 
   // Loading state
   if (loading && !isNew) {
@@ -136,8 +138,9 @@ spec:
           onStay={cancelNavigation}
           onDiscard={confirmNavigation}
           onSaveAndLeave={async () => {
-            await handleSave();
-            confirmNavigation();
+            if (await handleSave()) {
+              confirmNavigation();
+            }
           }}
         />
       )}
@@ -159,10 +162,7 @@ spec:
             initialValue={yamlContent}
             onChange={(value) => setYamlContent(value)}
             editorRef={editorRef}
-            onSave={async (value) => {
-              await updateContent(arn, value);
-              markClean(value);
-            }}
+            onSave={() => handleSave()}
           />
         </div>
       </EditorLayout>

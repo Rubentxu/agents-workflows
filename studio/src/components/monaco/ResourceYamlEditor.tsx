@@ -28,7 +28,7 @@ export interface ResourceYamlEditorProps {
   cardBadge?: string;
   initialValue?: string;
   onChange?: (value: string) => void;
-  onSave?: (value: string) => Promise<void>;
+  onSave?: (value: string) => Promise<boolean>;
   /** Optional ref to expose the Monaco editor instance for external save coordination */
   editorRef?: React.RefObject<Monaco.editor.IStandaloneCodeEditor | null>;
   readOnly?: boolean;
@@ -134,9 +134,13 @@ export function ResourceYamlEditor({
       } else {
         currentContent = editorRef.current?.getModel?.()?.getValue() ?? value;
       }
-      await onSave(currentContent);
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 2000);
+      const saved = await onSave(currentContent);
+      if (saved) {
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } else {
+        setSaveStatus('error');
+      }
     } catch (err) {
       setSaveStatus('error');
       setErrorMessage(err instanceof Error ? err.message : 'Save failed');

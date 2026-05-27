@@ -25,12 +25,14 @@ import '@xyflow/react/dist/style.css';
 
 import { useMcpTools } from '@/hooks/useMcpTools';
 import { useContent } from '@/hooks/useContent';
+import { useValidationGate, type GateDecision } from '@/hooks/useValidationGate';
 import { WorkflowStageNode, type StageNodeData } from './nodes/WorkflowStageNode';
 import { WorkflowInspector } from './inspector/WorkflowInspector';
 import { WorkflowYamlEditor } from './WorkflowYamlEditor';
 import { LoadingState } from '@/components/states/LoadingState';
 import { workflowToYaml } from '@/lib/workflowToYaml';
 import { InlineDiffSummary } from './shared/InlineDiffSummary';
+import { StagePalette, type StageTemplate } from './StagePalette';
 
 import type { Workflow } from '@/types/workflow';
 import type { WorkflowSpec, Stage } from '@/types/manifest.workflow';
@@ -42,8 +44,10 @@ interface McpStageDto {
   depends_on: string[];
   description?: string;
   input: Record<string, unknown>;
+  output?: { artifacts: Array<{ name: string; path_template: string; content_type?: string }> };
   execution?: {
     mode: string;
+    on_failure?: string;
     retry?: { max_attempts: number; backoff_ms: number };
   };
   conditions: Array<{ when: string; operator: string; value: unknown }>;
@@ -68,7 +72,7 @@ function mcpStageToStage(dto: McpStageDto, id: string): Stage {
     depends_on: Array.isArray(dto.depends_on) ? dto.depends_on : [],
     description: dto.description ?? '',
     input: (dto.input ?? {}) as Record<string, import('@/types/workflow').InputValue>,
-    output: { artifacts: [] },
+    output: dto.output ?? { artifacts: [] },
     execution: {
       mode: (dto.execution?.mode as Stage['execution']['mode']) ?? 'sequential',
       retry: dto.execution?.retry ?? { max_attempts: 1, backoff_ms: 0 },
@@ -95,7 +99,9 @@ function mcpWorkflowToWorkflow(dto: McpWorkflowDto, _projectId: string): Workflo
     stages: stageArray,
     execution: {
       mode: (dto.execution?.mode as Workflow['execution']['mode']) ?? 'sequential',
-      stop_on_error: true,
+      on_failure:
+        (dto.execution?.on_failure as Workflow['execution']['on_failure'])
+        ?? 'abort',
     },
     metrics: { streaming: false, interval_ms: 5000, channels: [] },
   };
@@ -139,6 +145,7 @@ type WorkflowInspectorProps = {
   } | null;
   onUpdate: (data: Partial<StageNodeData>) => void;
   onClose: () => void;
+  onDeleteStage?: (stageId: string) => void;
 };
 
 // Custom node type for ReactFlow
@@ -194,6 +201,7 @@ export function WorkflowEditorPage() {
   const navigate = useNavigate();
   const { getResourceByArn } = useMcpTools();
   const { updateContent } = useContent();
+  const { validating: validatingGate, lastResult: _gateResult, validateBeforeSave } = useValidationGate();
 
   const isNew = !workflowId || workflowId === 'new';
   const arn = searchParams.get('arn');
@@ -206,9 +214,25 @@ export function WorkflowEditorPage() {
   const [saving, setSaving] = useState(false);
   const yamlEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
 
+  // Stage palette state
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Validation diagnostics display
+  const [validationDiagnostics, setValidationDiagnostics] = useState<GateDecision | null>(null);
+
+  // Context menu for nodes/edges
+  const [contextMenu, setContextMenu] = useState<{
+    type: 'node' | 'edge';
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
   // ReactFlow state — typed for StageNodeData
   const [nodes, setNodes, onNodesChange] = useNodesState<StageNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const nodesRef = useRef<StageNode[]>([]);
+  nodesRef.current = nodes;
 
   // Build ReactFlow nodes from workflow stages, preserving existing positions
   const buildNodes = useCallback((stages: WorkflowSpec['stages'] = [], existingNodes: StageNode[] = []): StageNode[] => {
@@ -251,6 +275,8 @@ export function WorkflowEditorPage() {
             target: stage.id,
             type: 'smoothstep',
             animated: true,
+            selectable: true,
+            style: { strokeWidth: 2 },
           });
         }
       }
@@ -303,7 +329,7 @@ export function WorkflowEditorPage() {
         agents: {},
         skills: {},
         stages: [],
-        execution: { mode: 'sequential', stop_on_error: true },
+        execution: { mode: 'sequential', on_failure: 'abort' },
         metrics: { streaming: false, interval_ms: 5000, channels: [] },
       });
     }
@@ -313,24 +339,192 @@ export function WorkflowEditorPage() {
   useEffect(() => {
     if (!workflow) return;
     if (workflow.stages.length > 0) {
-      setNodes(buildNodes(workflow.stages, nodes));
+      setNodes(buildNodes(workflow.stages, nodesRef.current));
       setEdges(buildEdges(workflow.stages));
     }
-  }, [workflow?.stages, buildNodes, buildEdges, setNodes, setEdges, nodes]);
+  }, [workflow?.stages, buildNodes, buildEdges, setNodes, setEdges]);
 
+  // --- WG-1: Add Stage ---
+  const addStageToWorkflow = useCallback((template: StageTemplate) => {
+    if (!workflow) return;
+
+    // Generate unique stage ID
+    const existingIds = new Set(workflow.stages.map((s) => s.id));
+    let counter = workflow.stages.length + 1;
+    let stageId = `stage-${counter}`;
+    while (existingIds.has(stageId)) {
+      counter++;
+      stageId = `stage-${counter}`;
+    }
+
+    // For SDD template, prefix with sdd-
+    const finalId = template.label === 'SDD Stage' ? `sdd-${stageId}` : stageId;
+
+    const newStage: Stage = {
+      id: finalId,
+      agent: template.defaults.agent ?? '',
+      depends_on: template.defaults.depends_on ?? [],
+      description: template.defaults.description ?? '',
+      input: template.defaults.input ?? {},
+      output: template.defaults.output ?? { artifacts: [] },
+      execution: template.defaults.execution ?? { mode: 'sequential', retry: { max_attempts: 1, backoff_ms: 0 } },
+      conditions: template.defaults.conditions ?? [],
+      metrics: template.defaults.metrics ?? [],
+    };
+
+    setWorkflow((prev) => {
+      if (!prev) return prev;
+      return { ...prev, stages: [...prev.stages, newStage] };
+    });
+
+    // Also directly update nodes so the canvas shows the new stage immediately
+    setNodes((nds) => buildNodes([...(workflow?.stages ?? []), newStage], nds));
+    setEdges(buildEdges([...(workflow?.stages ?? []), newStage]));
+  }, [workflow, buildNodes, buildEdges, setNodes, setEdges]);
+
+  // --- WG-2: Delete Stage ---
+  const deleteStageFromWorkflow = useCallback((stageId: string) => {
+    setWorkflow((prev) => {
+      if (!prev) return prev;
+      const newStages = prev.stages.filter((s) => s.id !== stageId);
+      return {
+        ...prev,
+        stages: newStages.map((s) => ({
+          ...s,
+          depends_on: s.depends_on.filter((d) => d !== stageId),
+        })),
+      };
+    });
+
+    setNodes((nds) => nds.filter((n) => n.id !== stageId));
+    setEdges((eds) => eds.filter((e) => e.source !== stageId && e.target !== stageId));
+    setSelectedNodeId(null);
+  }, [setWorkflow, setNodes, setEdges]);
+
+  // Keyboard handler for Delete/Backspace on selected nodes
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeId) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (confirm(`Delete stage '${selectedNodeId}'? This will remove all connected edges.`)) {
+          deleteStageFromWorkflow(selectedNodeId);
+        }
+      }
+    };
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
+  }, [selectedNodeId, deleteStageFromWorkflow]);
+
+  // Close context menu on any click
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeMenu = () => setContextMenu(null);
+    window.addEventListener('click', closeMenu);
+    return () => window.removeEventListener('click', closeMenu);
+  }, [contextMenu]);
+
+  // --- WG-3: Edge Deletion ---
   const onConnect: OnConnect = useCallback(
     (params: Connection) => {
       setEdges((eds) => addEdge({ ...params, type: 'smoothstep', animated: true }, eds));
+      // Also update workflow state so YAML reflects the new dependency
+      if (params.target && params.source) {
+        setWorkflow((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            stages: prev.stages.map((s) =>
+              s.id === params.target
+                ? { ...s, depends_on: [...s.depends_on.filter((d) => d !== params.source), params.source] }
+                : s,
+            ),
+          };
+        });
+      }
     },
-    [setEdges]
+    [setEdges, setWorkflow],
   );
 
+  // Handle edge deletion from ReactFlow (keyboard delete on selected edges)
+  const onEdgesDelete = useCallback(
+    (deletedEdges: Edge[]) => {
+      setWorkflow((prev) => {
+        if (!prev) return prev;
+        let updatedStages = [...prev.stages];
+        for (const edge of deletedEdges) {
+          updatedStages = updatedStages.map((s) =>
+            s.id === edge.target
+              ? { ...s, depends_on: s.depends_on.filter((d) => d !== edge.source) }
+              : s,
+          );
+        }
+        return { ...prev, stages: updatedStages };
+      });
+    },
+    [setWorkflow],
+  );
+
+  // Edge context menu — "Remove dependency"
+  const onEdgeContextMenu = useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      event.preventDefault();
+      setContextMenu({ type: 'edge', id: edge.id, x: event.clientX, y: event.clientY });
+    },
+    [],
+  );
+
+  // Handle context menu action
+  const handleRemoveDependency = useCallback(
+    (edgeId: string) => {
+      const edge = edges.find((e) => e.id === edgeId);
+      if (!edge) return;
+
+      setWorkflow((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          stages: prev.stages.map((s) =>
+            s.id === edge.target
+              ? { ...s, depends_on: s.depends_on.filter((d) => d !== edge.source) }
+              : s,
+          ),
+        };
+      });
+
+      setEdges((eds) => eds.filter((e) => e.id !== edgeId));
+      setContextMenu(null);
+    },
+    [edges, setWorkflow, setEdges],
+  );
+
+  // --- WG-4: Validation Gate ---
   const handleSave = useCallback(async () => {
     if (!workflow) return;
     setSaving(true);
     setError(null);
+    setValidationDiagnostics(null);
     try {
       const yamlOut = workflowToYaml(workflow);
+
+      // Validate before save
+      const gate = await validateBeforeSave(workflow.arn, yamlOut);
+      if (!gate.allowed) {
+        setValidationDiagnostics(gate);
+        setSaving(false);
+        return;
+      }
+
       const success = await updateContent(workflow.arn, yamlOut);
       if (!success) {
         setError('Failed to save workflow');
@@ -340,17 +534,17 @@ export function WorkflowEditorPage() {
     } finally {
       setSaving(false);
     }
-  }, [workflow, updateContent]);
+  }, [workflow, updateContent, validateBeforeSave]);
 
   // Handle valid YAML edits → update workflow state + canvas nodes/edges
   const handleYamlWorkflowChange = useCallback(
     (updatedWorkflow: Workflow) => {
       setWorkflow(updatedWorkflow);
       // Update canvas nodes with new stages (preserve existing positions)
-      setNodes(buildNodes(updatedWorkflow.stages, nodes));
+      setNodes(buildNodes(updatedWorkflow.stages, nodesRef.current));
       setEdges(buildEdges(updatedWorkflow.stages));
     },
-    [nodes, buildNodes, buildEdges, setNodes, setEdges]
+    [buildNodes, buildEdges, setNodes, setEdges],
   );
 
   const selectedNode = selectedNodeId ? (nodes.find((n) => n.id === selectedNodeId) ?? null) : null;
@@ -396,10 +590,10 @@ export function WorkflowEditorPage() {
           />
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || validatingGate}
             className="px-4 py-1.5 bg-primary text-on-primary text-sm font-medium rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? 'Saving...' : validatingGate ? 'Validating...' : 'Save'}
           </button>
         </div>
       </div>
@@ -411,8 +605,52 @@ export function WorkflowEditorPage() {
         </div>
       )}
 
+      {/* Validation Diagnostics */}
+      {validationDiagnostics && !validationDiagnostics.allowed && (
+        <div className="mx-6 mt-4 border border-error/30 rounded-lg overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2 bg-error/10 border-b border-error/20">
+            <span className="text-xs font-semibold text-error">
+              Validation Errors ({validationDiagnostics.diagnostics.filter(d => d.severity === 'error').length})
+            </span>
+            <button
+              onClick={() => setValidationDiagnostics(null)}
+              className="text-error/60 hover:text-error text-xs"
+            >
+              Dismiss
+            </button>
+          </div>
+          <div className="max-h-32 overflow-auto bg-surface-container/20">
+            {validationDiagnostics.diagnostics.map((d, i) => (
+              <div
+                key={i}
+                className={`px-4 py-1.5 text-xs border-b border-outline-variant/30 last:border-b-0 ${
+                  d.severity === 'error' ? 'text-error' : 'text-warning'
+                }`}
+              >
+                <span className="font-semibold uppercase mr-1">
+                  [{d.severity}]
+                </span>
+                {d.message}
+                {d.location && (
+                  <span className="text-secondary ml-1">
+                    (line {d.location.line})
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Body — Canvas primary, inspector + YAML serialization panel */}
       <div className="flex-1 flex overflow-hidden">
+        {/* Stage Palette (left) */}
+        <StagePalette
+          isOpen={paletteOpen}
+          onToggle={() => setPaletteOpen((prev) => !prev)}
+          onAddStage={addStageToWorkflow}
+        />
+
         {/* Canvas */}
         <div className="flex-1">
           <ReactFlow
@@ -420,8 +658,15 @@ export function WorkflowEditorPage() {
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onEdgesDelete={onEdgesDelete}
             onConnect={onConnect}
             onNodeClick={(_, node) => setSelectedNodeId(node.id === selectedNodeId ? null : node.id)}
+            onNodeContextMenu={(event, node) => {
+              event.preventDefault();
+              setSelectedNodeId(node.id);
+              setContextMenu({ type: 'node', id: node.id, x: event.clientX, y: event.clientY });
+            }}
+            onEdgeContextMenu={onEdgeContextMenu}
             nodeTypes={nodeTypes}
             fitView
             className="bg-background"
@@ -438,6 +683,7 @@ export function WorkflowEditorPage() {
         {/* Inspector panel */}
         {selectedNode ? (
           <WorkflowInspector
+            key={selectedNode.id}
             node={selectedNode as StageNode}
             workflow={workflowForInspector(workflow)}
             onUpdate={(updated) => {
@@ -457,6 +703,7 @@ export function WorkflowEditorPage() {
               }
             }}
             onClose={() => setSelectedNodeId(null)}
+            onDeleteStage={deleteStageFromWorkflow}
           />
         ) : (
           <div className="w-72 border-l border-outline-variant bg-surface-container/20 flex items-center justify-center">
@@ -473,6 +720,44 @@ export function WorkflowEditorPage() {
           />
         </div>
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-surface border border-outline-variant rounded-lg shadow-lg py-1 min-w-[160px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contextMenu.type === 'node' && (
+            <button
+              className="w-full text-left px-3 py-2 text-sm text-error hover:bg-error/10 transition-colors flex items-center gap-2"
+              onClick={() => {
+                const nodeId = contextMenu.id;
+                setContextMenu(null);
+                if (confirm(`Delete stage '${nodeId}'? This will remove all connected edges.`)) {
+                  deleteStageFromWorkflow(nodeId);
+                }
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M2 4h12M5 4V2.5A.5.5 0 015.5 2h5a.5.5 0 01.5.5V4M6 7v5M10 7v5M3 4l1 10a1 1 0 001 1h6a1 1 0 001-1l1-10" />
+              </svg>
+              Delete Stage
+            </button>
+          )}
+          {contextMenu.type === 'edge' && (
+            <button
+              className="w-full text-left px-3 py-2 text-sm text-error hover:bg-error/10 transition-colors flex items-center gap-2"
+              onClick={() => handleRemoveDependency(contextMenu.id)}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M3 8h10" />
+              </svg>
+              Remove dependency
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

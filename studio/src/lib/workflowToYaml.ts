@@ -25,7 +25,10 @@ export function workflowToYaml(workflow: Workflow | null): string {
       stages: workflow.stages,
       agents: workflow.agents,
       skills: workflow.skills,
-      execution: workflow.execution as unknown as { mode: string; stop_on_error: boolean },
+      execution: {
+        mode: workflow.execution.mode,
+        on_failure: workflow.execution.on_failure,
+      } as WorkflowManifest['spec']['execution'],
       metrics: workflow.metrics as { streaming: boolean; interval_ms: number; channels: string[] },
     },
   };
@@ -43,7 +46,9 @@ export function manifestToWorkflow(manifest: WorkflowManifest): Workflow {
     stages: manifest.spec.stages ?? [],
     execution: {
       mode: (manifest.spec.execution?.mode as Workflow['execution']['mode']) ?? 'sequential',
-      stop_on_error: manifest.spec.execution?.stop_on_error ?? true,
+      on_failure:
+        (manifest.spec.execution?.on_failure as Workflow['execution']['on_failure'])
+        ?? (manifest.spec.execution?.stop_on_error === false ? 'continue' : 'abort'),
     },
     metrics: manifest.spec.metrics ?? { streaming: false, interval_ms: 5000, channels: [] },
   };

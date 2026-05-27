@@ -24,9 +24,10 @@ interface WorkflowInspectorProps {
   } | null;
   onUpdate: (data: Partial<StageNodeData>) => void;
   onClose: () => void;
+  onDeleteStage?: (stageId: string) => void;
 }
 
-export function WorkflowInspector({ node, workflow, onUpdate, onClose }: WorkflowInspectorProps) {
+export function WorkflowInspector({ node, workflow, onUpdate, onClose, onDeleteStage }: WorkflowInspectorProps) {
   const stageData = workflow?.spec?.stages?.find((s) => s.id === node.id);
 
   const [localData, setLocalData] = useState<StageNodeData>({
@@ -54,12 +55,27 @@ export function WorkflowInspector({ node, workflow, onUpdate, onClose }: Workflo
           <h3 className="text-sm font-semibold text-on-surface">Stage Inspector</h3>
           <p className="text-xs text-secondary font-mono mt-0.5">{node.id}</p>
         </div>
-        <button
-          onClick={onClose}
-          className="text-secondary hover:text-on-surface transition-colors text-sm"
-        >
-          ✕
-        </button>
+        <div className="flex items-center gap-1">
+          {onDeleteStage && (
+            <button
+              onClick={() => {
+                if (confirm(`Delete stage '${node.id}'? This will remove all connected edges.`)) {
+                  onDeleteStage(node.id);
+                }
+              }}
+              className="text-error hover:text-error/80 transition-colors text-xs px-2 py-1 rounded hover:bg-error/10"
+              title="Delete stage"
+            >
+              Delete
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="text-secondary hover:text-on-surface transition-colors text-sm"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       {/* Form */}

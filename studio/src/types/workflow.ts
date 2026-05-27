@@ -81,7 +81,7 @@ export interface MetricsConfig {
  */
 export interface ExecutionConfig {
   mode: 'sequential' | 'parallel';
-  stop_on_error: boolean;
+  on_failure: 'abort' | 'continue' | 'retry';
 }
 
 /**

@@ -1,0 +1,14 @@
+[Unit]
+Description=agents-workflows MCP Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStartPre=${BINARY} init --workspace ${WORKSPACE}
+ExecStart=${BINARY} start --workspace ${WORKSPACE}
+Environment=RUST_LOG=info
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

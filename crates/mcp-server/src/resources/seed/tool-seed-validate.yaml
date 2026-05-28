@@ -1,0 +1,16 @@
+arn: arn:local:global:tool/seed-validate
+name: seed-validate
+description: Validation tool for testing
+type: tool
+config:
+  input_schema:
+    type: object
+    properties:
+      code:
+        type: string
+        description: Code to validate
+      language:
+        type: string
+        description: Programming language
+    required:
+      - code

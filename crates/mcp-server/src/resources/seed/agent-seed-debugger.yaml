@@ -1,0 +1,11 @@
+arn: arn:local:global:agent/seed-debugger
+name: seed-debugger
+description: Debugger agent for testing
+type: agent
+config:
+  tools:
+    - workflow_list
+    - workflow_get
+    - analyze_impact
+  prompts:
+    - system: "You are a debugging agent"

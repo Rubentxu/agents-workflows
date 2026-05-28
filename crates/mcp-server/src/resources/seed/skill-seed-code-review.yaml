@@ -1,0 +1,10 @@
+arn: arn:local:global:skill/seed-code-review
+name: seed-code-review
+description: Code review skill
+type: skill
+config:
+  triggers:
+    - "code review"
+    - "review code"
+  actions:
+    - analyze_impact

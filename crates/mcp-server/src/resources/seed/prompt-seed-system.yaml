@@ -1,0 +1,8 @@
+arn: arn:local:global:prompt/seed-system
+name: seed-system
+description: System prompt template
+type: prompt
+config:
+  template: "You are working in project {{context}}. Follow SDD workflow."
+  variables:
+    - context

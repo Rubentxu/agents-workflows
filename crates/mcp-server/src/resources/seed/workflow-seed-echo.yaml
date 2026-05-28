@@ -1,0 +1,11 @@
+arn: arn:local:global:workflow/seed-echo
+name: seed-echo
+description: Simple echo workflow for testing
+type: workflow
+config:
+  stages:
+    - id: echo
+      name: Echo Input
+      tool: bash
+      args:
+        command: "echo {{input}}"

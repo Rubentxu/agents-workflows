@@ -10,7 +10,7 @@ import { buildArn, KIND_TO_API_VERSION } from '@/types/manifest';
 
 export function workflowToYaml(workflow: Workflow | null, scope?: string): string {
   if (!workflow) return '';
-  const metadataScope = scope ?? 'global';
+  const metadataScope = scope ?? workflow.scope ?? 'global';
   const manifest: WorkflowManifest = {
     apiVersion: KIND_TO_API_VERSION.Workflow,
     kind: 'Workflow',
@@ -19,8 +19,8 @@ export function workflowToYaml(workflow: Workflow | null, scope?: string): strin
       arn: buildArn(metadataScope, 'Workflow', workflow.name),
       name: workflow.name,
       scope: metadataScope,
-      labels: {},
-      annotations: {},
+      labels: workflow.labels,
+      annotations: workflow.annotations,
     },
     spec: {
       description: workflow.description,
@@ -41,8 +41,11 @@ export function manifestToWorkflow(manifest: WorkflowManifest): Workflow {
   return {
     arn: `arn:local:${manifest.metadata.scope}:workflow/${manifest.metadata.name}`,
     name: manifest.metadata.name,
+    scope: manifest.metadata.scope,
     version: '1.0',
     description: manifest.spec.description ?? '',
+    labels: manifest.metadata.labels ?? {},
+    annotations: manifest.metadata.annotations ?? {},
     agents: manifest.spec.agents ?? {},
     skills: manifest.spec.skills ?? {},
     stages: manifest.spec.stages ?? [],

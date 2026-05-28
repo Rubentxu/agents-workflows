@@ -14,8 +14,11 @@ describe('Workflow YAML round-trip', () => {
   const sampleWorkflow: Workflow = {
     arn: 'arn:local:global:workflow/test-workflow',
     name: 'test-workflow',
+    scope: 'global',
     version: '1.0',
     description: 'A test workflow',
+    labels: { team: 'studio' },
+    annotations: { owner: 'frontend' },
     agents: {},
     skills: {},
     stages: [
@@ -83,6 +86,9 @@ describe('Workflow YAML round-trip', () => {
 
       expect(restored.name).toBe(sampleWorkflow.name);
       expect(restored.description).toBe(sampleWorkflow.description);
+      expect(restored.scope).toBe(sampleWorkflow.scope);
+      expect(restored.labels).toEqual(sampleWorkflow.labels);
+      expect(restored.annotations).toEqual(sampleWorkflow.annotations);
       expect(restored.stages).toEqual(sampleWorkflow.stages);
       expect(restored.execution).toEqual(sampleWorkflow.execution);
       expect(restored.metrics).toEqual(sampleWorkflow.metrics);
@@ -186,6 +192,9 @@ describe('Workflow YAML round-trip', () => {
 
       const result = manifestToWorkflow(manifest);
       expect(result.name).toBe('my-workflow');
+      expect(result.scope).toBe('global');
+      expect(result.labels).toEqual({});
+      expect(result.annotations).toEqual({});
       expect(result.description).toBe('Test description');
       expect(result.execution.mode).toBe('parallel');
       expect(result.execution.on_failure).toBe('continue');
@@ -295,8 +304,11 @@ describe('Workflow YAML round-trip', () => {
       const fullWorkflow: Workflow = {
         arn: 'arn:local:workspace/test:workflow/complete',
         name: 'complete-workflow',
+        scope: 'workspace/test',
         version: '2.0',
         description: 'Workflow with all fields',
+        labels: { env: 'test' },
+        annotations: { note: 'complete' },
         agents: {
           'test-agent': {
             name: 'arn:local:global:agent/test-agent',
@@ -343,6 +355,9 @@ describe('Workflow YAML round-trip', () => {
       const restored = manifestToWorkflow(parsed);
 
       expect(restored.name).toBe(fullWorkflow.name);
+      expect(restored.scope).toBe(fullWorkflow.scope);
+      expect(restored.labels).toEqual(fullWorkflow.labels);
+      expect(restored.annotations).toEqual(fullWorkflow.annotations);
       // Note: version is not preserved in manifest round-trip (it's internal-only)
       expect(restored.agents).toEqual(fullWorkflow.agents);
       expect(restored.skills).toEqual(fullWorkflow.skills);

@@ -21,6 +21,7 @@ import { NotFoundPage } from '@/components/pages/NotFoundPage';
 
 // Design — Editors (full implementations)
 import { WorkflowEditorPage } from '@/components/design/WorkflowEditorPage';
+import { NewWorkflowPage } from '@/components/design/NewWorkflowPage';
 import { AgentEditorPage } from '@/components/design/AgentEditorPage';
 import { SkillEditorPage } from '@/components/design/SkillEditorPage';
 import { PromptEditorPage } from '@/components/design/PromptEditorPage';
@@ -55,7 +56,7 @@ function WorkflowsCatalog() {
       resourceType="workflow"
       accentColor="blue"
       fetchFn={listWorkflows}
-      createPath={`/studio/projects/${projectId}/design/workflows/new/editor`}
+      createPath={`/studio/projects/${projectId}/design/workflows/new`}
       editorPath={(id) => `/studio/projects/${projectId}/design/workflows/${encodeURIComponent(id)}/editor`}
       projectId={projectId}
       deletable
@@ -182,6 +183,7 @@ export function createStudioRouter(): ReturnType<typeof createBrowserRouter> {
 
             {/* Workflows */}
             <Route path="workflows" element={<WorkflowsCatalog />} />
+            <Route path="workflows/new" element={<NewWorkflowPage />} />
             <Route path="workflows/new/editor" element={<WorkflowEditorPage />} />
             <Route path="workflows/:workflowId/editor" element={<WorkflowEditorPage />} />
 

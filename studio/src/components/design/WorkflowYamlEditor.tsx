@@ -79,7 +79,7 @@ export function WorkflowYamlEditor({
     }
     setParseError(null);
     onYamlContentChange?.(newYaml);
-  }, [workflow?.stages, syncEnabled]); // Only react to stages changes, not entire workflow
+  }, [workflow, syncEnabled, editorRef, onYamlContentChange]);
 
   const handleYamlChange = useCallback((newValue: string) => {
     // Mark that this change came from Monaco user editing

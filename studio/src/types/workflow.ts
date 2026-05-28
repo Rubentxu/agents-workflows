@@ -90,8 +90,11 @@ export interface ExecutionConfig {
 export interface Workflow {
   arn: string;
   name: string;
+  scope: string;
   version: string;
   description: string;
+  labels: Record<string, string>;
+  annotations: Record<string, string>;
   agents: Record<string, AgentDefinition>;
   skills: Record<string, SkillReference>;
   stages: Stage[];

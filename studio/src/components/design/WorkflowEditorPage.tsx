@@ -29,10 +29,13 @@ import { useValidationGate, type GateDecision } from '@/hooks/useValidationGate'
 import { WorkflowStageNode, type StageNodeData } from './nodes/WorkflowStageNode';
 import { WorkflowInspector } from './inspector/WorkflowInspector';
 import { WorkflowYamlEditor } from './WorkflowYamlEditor';
+import { WorkflowMetadataPanel } from './WorkflowMetadataPanel';
 import { LoadingState } from '@/components/states/LoadingState';
 import { workflowToYaml } from '@/lib/workflowToYaml';
 import { InlineDiffSummary } from './shared/InlineDiffSummary';
 import { StagePalette, type StageTemplate } from './StagePalette';
+import { buildArn } from '@/types/manifest';
+import { instantiateWorkflowFromTemplate } from '@/lib/workflowTemplates';
 
 import type { Workflow } from '@/types/workflow';
 import type { WorkflowSpec, Stage } from '@/types/manifest.workflow';
@@ -58,6 +61,8 @@ interface McpWorkflowDto {
   name: string;
   description: string;
   scope: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
   stages: Record<string, McpStageDto>;
   execution?: { mode: string; on_failure: string };
 }
@@ -92,8 +97,11 @@ function mcpWorkflowToWorkflow(dto: McpWorkflowDto, _projectId: string): Workflo
   return {
     arn: dto.arn,
     name: dto.name,
+    scope: dto.scope,
     version: '1.0',
     description: dto.description ?? '',
+    labels: dto.labels ?? {},
+    annotations: dto.annotations ?? {},
     agents: {},
     skills: {},
     stages: stageArray,
@@ -196,15 +204,25 @@ function applyStagePatch(
 }
 
 export function WorkflowEditorPage() {
-  const { projectId, workflowId } = useParams();
+  const { projectId, workflowId, workspaceId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { getResourceByArn } = useMcpTools();
   const { updateContent } = useContent();
   const { validating: validatingGate, lastResult: _gateResult, validateBeforeSave } = useValidationGate();
 
-  const isNew = !workflowId || workflowId === 'new';
   const arn = searchParams.get('arn');
+  const templateId = searchParams.get('template');
+  const scopeFromUrl = searchParams.get('scope');
+  const isTemplateCreation = Boolean(templateId && scopeFromUrl && !arn);
+  const isNew = !workflowId || workflowId === 'new' || isTemplateCreation;
+  const initialName = workflowId && workflowId !== 'new' ? workflowId : (searchParams.get('name') ?? 'new-workflow');
+  const derivedScope = scopeFromUrl
+    ?? (workspaceId
+      ? `workspace/${workspaceId}`
+      : projectId
+        ? `project/${projectId}`
+        : 'global');
 
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [originalWorkflow, setOriginalWorkflow] = useState<Workflow | null>(null);
@@ -290,7 +308,7 @@ export function WorkflowEditorPage() {
       setLoading(false);
       return;
     }
-    const targetArn = arn ?? `arn:local:project/${projectId}:workflow/${workflowId}`;
+    const targetArn = arn ?? buildArn(derivedScope, 'Workflow', workflowId ?? 'new-workflow');
     setLoading(true);
     setError(null);
     try {
@@ -312,7 +330,7 @@ export function WorkflowEditorPage() {
     } finally {
       setLoading(false);
     }
-  }, [isNew, arn, projectId, workflowId, getResourceByArn, buildNodes, buildEdges, setNodes, setEdges]);
+  }, [isNew, arn, derivedScope, projectId, workflowId, getResourceByArn, buildNodes, buildEdges, setNodes, setEdges]);
 
   useEffect(() => {
     fetchWorkflow();
@@ -321,19 +339,9 @@ export function WorkflowEditorPage() {
   // Handle new workflow init
   useEffect(() => {
     if (isNew && !workflow) {
-      setWorkflow({
-        arn: `arn:local:project/${projectId ?? 'app'}:workflow/new-workflow`,
-        name: 'new-workflow',
-        version: '1.0',
-        description: '',
-        agents: {},
-        skills: {},
-        stages: [],
-        execution: { mode: 'sequential', on_failure: 'abort' },
-        metrics: { streaming: false, interval_ms: 5000, channels: [] },
-      });
+      setWorkflow(instantiateWorkflowFromTemplate(templateId, derivedScope, initialName));
     }
-  }, [isNew, workflow, projectId]);
+  }, [isNew, workflow, templateId, derivedScope, initialName]);
 
   // Sync workflow stages to nodes/edges
   useEffect(() => {
@@ -341,6 +349,9 @@ export function WorkflowEditorPage() {
     if (workflow.stages.length > 0) {
       setNodes(buildNodes(workflow.stages, nodesRef.current));
       setEdges(buildEdges(workflow.stages));
+    } else {
+      setNodes([]);
+      setEdges([]);
     }
   }, [workflow?.stages, buildNodes, buildEdges, setNodes, setEdges]);
 
@@ -511,12 +522,11 @@ export function WorkflowEditorPage() {
   // --- WG-4: Validation Gate ---
   const handleSave = useCallback(async () => {
     if (!workflow) return;
-    const workflowScope = projectId ? `project/${projectId}` : 'global';
     setSaving(true);
     setError(null);
     setValidationDiagnostics(null);
     try {
-      const yamlOut = workflowToYaml(workflow, workflowScope);
+      const yamlOut = workflowToYaml(workflow, workflow.scope);
 
       // Validate before save
       const gate = await validateBeforeSave(workflow.arn, yamlOut);
@@ -535,7 +545,7 @@ export function WorkflowEditorPage() {
     } finally {
       setSaving(false);
     }
-  }, [workflow, projectId, updateContent, validateBeforeSave]);
+  }, [workflow, updateContent, validateBeforeSave]);
 
   // Handle valid YAML edits → update workflow state + canvas nodes/edges
   const handleYamlWorkflowChange = useCallback(
@@ -653,32 +663,44 @@ export function WorkflowEditorPage() {
         />
 
         {/* Canvas */}
-        <div className="flex-1">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onEdgesDelete={onEdgesDelete}
-            onConnect={onConnect}
-            onNodeClick={(_, node) => setSelectedNodeId(node.id === selectedNodeId ? null : node.id)}
-            onNodeContextMenu={(event, node) => {
-              event.preventDefault();
-              setSelectedNodeId(node.id);
-              setContextMenu({ type: 'node', id: node.id, x: event.clientX, y: event.clientY });
-            }}
-            onEdgeContextMenu={onEdgeContextMenu}
-            nodeTypes={nodeTypes}
-            fitView
-            className="bg-background"
-          >
-            <Background gap={16} color="var(--color-border-subtle)" />
-            <Controls className="!border-outline-variant !bg-surface" />
-            <MiniMap
-              className="!border-outline-variant !bg-surface"
-              nodeColor={(n) => n.id === selectedNodeId ? 'var(--color-accent)' : 'var(--color-text-muted)'}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {workflow && (
+            <WorkflowMetadataPanel
+              workflow={workflow}
+              onChange={(nextWorkflow) => {
+                const nextArn = buildArn(nextWorkflow.scope, 'Workflow', nextWorkflow.name);
+                setWorkflow({ ...nextWorkflow, arn: nextArn });
+              }}
             />
-          </ReactFlow>
+          )}
+
+          <div className="flex-1">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onEdgesDelete={onEdgesDelete}
+              onConnect={onConnect}
+              onNodeClick={(_, node) => setSelectedNodeId(node.id === selectedNodeId ? null : node.id)}
+              onNodeContextMenu={(event, node) => {
+                event.preventDefault();
+                setSelectedNodeId(node.id);
+                setContextMenu({ type: 'node', id: node.id, x: event.clientX, y: event.clientY });
+              }}
+              onEdgeContextMenu={onEdgeContextMenu}
+              nodeTypes={nodeTypes}
+              fitView
+              className="bg-background"
+            >
+              <Background gap={16} color="var(--color-border-subtle)" />
+              <Controls className="!border-outline-variant !bg-surface" />
+              <MiniMap
+                className="!border-outline-variant !bg-surface"
+                nodeColor={(n) => n.id === selectedNodeId ? 'var(--color-accent)' : 'var(--color-text-muted)'}
+              />
+            </ReactFlow>
+          </div>
         </div>
 
         {/* Inspector panel */}

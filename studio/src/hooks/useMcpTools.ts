@@ -8,7 +8,7 @@ import { useCallback, useState } from 'react';
 import { useRegistryCacheStore } from '@/stores/registryCacheStore';
 import { useWorkflowEditorStore } from '@/stores/workflowEditorStore';
 import { useExecutionStore } from '@/stores/executionStore';
-import { mcpRequest, parseToolResult, arnToTool } from '@/hooks/mcpClient';
+import { mcpRequest, parseToolResult, arnToTool, arnToolArguments } from '@/hooks/mcpClient';
 import { restApiUrl } from '@/lib/apiBase';
 import type { Workflow, RegistryNode, ExecutionPlan } from '@/types';
 
@@ -156,10 +156,13 @@ export function useMcpTools() {
         if (!match) throw new Error(`Invalid ARN: ${arn}`);
         const type = match[1];
         const toolName = arnToTool(type);
+        if (!toolName) {
+          return null;
+        }
 
         const result = await mcpRequest('tools/call', {
           name: toolName,
-          arguments: { arn },
+          arguments: arnToolArguments(type, arn),
         }) as { content?: { text: string }[] };
 
         const data = parseToolResult(result, '{}');

@@ -1,6 +1,6 @@
 //! Registry Scanner - Discovers resources from filesystem
 
-use crate::domain::{Node, NodeType, RegistryResult};
+use crate::domain::{Arn, Node, NodeType, RegistryResult};
 use crate::application::NodeService;
 use std::path::Path;
 use walkdir::WalkDir;
@@ -94,7 +94,7 @@ impl RegistryScanner {
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let parent = path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap_or("");
 
-        let arn = format!("workflow:arn://local/{}/{}", parent, stem);
+        let arn = Arn::new(parent, "workflow", stem).to_string();
         let checksum = self.calculate_checksum(path)?;
 
         let mut node = Node::new(
@@ -122,7 +122,7 @@ impl RegistryScanner {
         let skill_dir = path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap_or("");
         let namespace = path.parent().and_then(|p| p.parent()).and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap_or("local");
 
-        let arn = format!("skill:arn://local/{}/{}", namespace, skill_dir);
+        let arn = Arn::new(namespace, "skill", skill_dir).to_string();
         let checksum = self.calculate_checksum(path)?;
 
         // Parse description from SKILL.md

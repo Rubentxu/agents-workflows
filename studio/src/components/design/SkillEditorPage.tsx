@@ -15,6 +15,7 @@ import { useDirtyGuard } from '@/hooks/useDirtyGuard';
 import { EditorLayout, DirtyGuardDialog } from './shared';
 import { MarkdownResourceEditor } from '@/components/monaco';
 import { isYamlConfigFormat, yamlConfigToMarkdown, markdownToYamlConfig } from '@/lib/contentTransform';
+import { KIND_TO_API_VERSION } from '@/types';
 
 export function SkillEditorPage() {
   const { projectId, skillId } = useParams();
@@ -30,7 +31,7 @@ export function SkillEditorPage() {
 
   const defaultContent = isNew
     ? `---
-apiVersion: workflows.local/v1
+apiVersion: ${KIND_TO_API_VERSION.Skill}
 kind: Skill
 metadata:
   name: new-skill

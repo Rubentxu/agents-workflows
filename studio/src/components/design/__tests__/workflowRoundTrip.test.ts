@@ -261,7 +261,7 @@ describe('Workflow YAML round-trip', () => {
 
     it('throws on invalid YAML syntax', () => {
       const invalidYaml = `
-        apiVersion: workflows.local/v1
+        apiVersion: ${API_VERSION}
         kind: Workflow
         metadata:
           name: test

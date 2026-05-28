@@ -1,11 +1,21 @@
-arn: arn:local:global:agent/seed-debugger
-name: seed-debugger
-description: Debugger agent for testing
-type: agent
-config:
-  tools:
-    - workflow_list
-    - workflow_get
-    - analyze_impact
+apiVersion: agents.local/v1
+kind: Agent
+metadata:
+  uid: ""
+  arn: arn:local:global:agent/seed-debugger
+  name: seed-debugger
+  scope: global
+  labels:
+    seed: "true"
+  annotations:
+    description: "Debugger agent for testing"
+spec:
+  description: Debugger agent for testing
+  model: "provider/model"
+  skills: []
   prompts:
-    - system: "You are a debugging agent"
+    - arn:local:global:prompt/seed-system
+  tools:
+    workflow_list: true
+    workflow_get: true
+    analyze_impact: true

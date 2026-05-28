@@ -1,8 +1,16 @@
-arn: arn:local:global:tool/seed-validate
-name: seed-validate
-description: Validation tool for testing
-type: tool
-config:
+apiVersion: tools.local/v1
+kind: Tool
+metadata:
+  uid: ""
+  arn: arn:local:global:tool/seed-validate
+  name: seed-validate
+  scope: global
+  labels:
+    seed: "true"
+  annotations:
+    description: "Validation tool for testing"
+spec:
+  description: Validation tool for testing
   input_schema:
     type: object
     properties:
@@ -14,3 +22,7 @@ config:
         description: Programming language
     required:
       - code
+  category: validation
+  tags:
+    - testing
+    - validation

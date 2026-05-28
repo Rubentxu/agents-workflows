@@ -6,17 +6,19 @@
 import * as yaml from 'js-yaml';
 import type { Workflow } from '@/types/workflow';
 import type { WorkflowManifest } from '@/types/manifest.workflow';
-import { API_VERSION } from '@/types/manifest';
+import { buildArn, KIND_TO_API_VERSION } from '@/types/manifest';
 
-export function workflowToYaml(workflow: Workflow | null): string {
+export function workflowToYaml(workflow: Workflow | null, scope?: string): string {
   if (!workflow) return '';
+  const metadataScope = scope ?? 'global';
   const manifest: WorkflowManifest = {
-    apiVersion: API_VERSION,
+    apiVersion: KIND_TO_API_VERSION.Workflow,
     kind: 'Workflow',
     metadata: {
       uid: '',
+      arn: buildArn(metadataScope, 'Workflow', workflow.name),
       name: workflow.name,
-      scope: 'global',
+      scope: metadataScope,
       labels: {},
       annotations: {},
     },

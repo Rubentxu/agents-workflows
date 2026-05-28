@@ -15,6 +15,7 @@ import { useDirtyGuard } from '@/hooks/useDirtyGuard';
 import { EditorLayout, DirtyGuardDialog } from './shared';
 import { MarkdownResourceEditor } from '@/components/monaco';
 import { isYamlConfigFormat, yamlConfigToMarkdown, markdownToYamlConfig } from '@/lib/contentTransform';
+import { KIND_TO_API_VERSION } from '@/types';
 
 export function TemplateEditorPage() {
   const { projectId, templateId } = useParams();
@@ -30,7 +31,7 @@ export function TemplateEditorPage() {
 
   const defaultContent = isNew
     ? `---
-apiVersion: workflows.local/v1
+apiVersion: ${KIND_TO_API_VERSION.Template}
 kind: Template
 metadata:
   name: new-template
@@ -44,7 +45,7 @@ spec:
       description: "Example parameter"
       required: true
   manifest:
-    apiVersion: workflows.local/v1
+    apiVersion: ${KIND_TO_API_VERSION.Workflow}
     kind: Workflow
     metadata:
       name: "{{name}}"

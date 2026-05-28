@@ -323,7 +323,7 @@ export function WorkflowEditorPage() {
     if (isNew && !workflow) {
       setWorkflow({
         arn: `arn:local:project/${projectId ?? 'app'}:workflow/new-workflow`,
-        name: 'New Workflow',
+        name: 'new-workflow',
         version: '1.0',
         description: '',
         agents: {},
@@ -511,11 +511,12 @@ export function WorkflowEditorPage() {
   // --- WG-4: Validation Gate ---
   const handleSave = useCallback(async () => {
     if (!workflow) return;
+    const workflowScope = projectId ? `project/${projectId}` : 'global';
     setSaving(true);
     setError(null);
     setValidationDiagnostics(null);
     try {
-      const yamlOut = workflowToYaml(workflow);
+      const yamlOut = workflowToYaml(workflow, workflowScope);
 
       // Validate before save
       const gate = await validateBeforeSave(workflow.arn, yamlOut);
@@ -534,7 +535,7 @@ export function WorkflowEditorPage() {
     } finally {
       setSaving(false);
     }
-  }, [workflow, updateContent, validateBeforeSave]);
+  }, [workflow, projectId, updateContent, validateBeforeSave]);
 
   // Handle valid YAML edits → update workflow state + canvas nodes/edges
   const handleYamlWorkflowChange = useCallback(

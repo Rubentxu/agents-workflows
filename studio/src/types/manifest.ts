@@ -4,8 +4,6 @@
  * See docs/studio-redesign.md for the full design rationale.
  */
 
-export const API_VERSION = 'workflows.local/v1' as const;
-
 /**
  * Supported resource kinds managed by Studio.
  */
@@ -57,12 +55,28 @@ export const KIND_TO_TYPE: Record<ResourceKind, ResourceType> = {
   Policy: 'policy',
 };
 
+export const KIND_TO_API_VERSION = {
+  Workflow: 'workflows.local/v1',
+  Agent: 'agents.local/v1',
+  Skill: 'skills.local/v1',
+  Prompt: 'prompts.local/v1',
+  Tool: 'tools.local/v1',
+  Template: 'templates.local/v1',
+  Policy: 'policies.local/v1',
+} as const satisfies Record<ResourceKind, string>;
+
+export type ApiVersion = (typeof KIND_TO_API_VERSION)[ResourceKind];
+
+export const API_VERSION = KIND_TO_API_VERSION.Workflow;
+
 /**
  * Base metadata shared by all manifests.
  */
 export interface ResourceMetadata {
   /** Stable internal identity for history and tracing. Not part of ARN. */
   uid: string;
+  /** Self-contained ARN derived from scope + kind + name, stored for convenience. */
+  arn?: string;
   /** Unique name within scope and kind. Part of ARN. */
   name: string;
   /** ARN scope: global, project/{id}, or workspace/{id}. */
@@ -77,7 +91,7 @@ export interface ResourceMetadata {
  * Base manifest shape for all agentic resources.
  */
 export interface Manifest<K extends ResourceKind = ResourceKind> {
-  apiVersion: typeof API_VERSION;
+  apiVersion: ApiVersion;
   kind: K;
   metadata: ResourceMetadata;
   spec: unknown;

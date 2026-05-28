@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use std::path::PathBuf;
 use anyhow::Result;
-use registry::domain::{Node, NodeType};
+use registry::domain::{Arn, Node, NodeType};
 use registry::infrastructure::db::Database;
 use registry::domain::WorkspaceRepository;
 use workflow::PlanningResult;
@@ -83,24 +83,19 @@ impl AppState {
     /// Get the file path for a resource ARN (ADR-0016)
     /// Returns None if the ARN doesn't map to a file path
     pub fn get_content_path(&self, arn: &str) -> Option<PathBuf> {
-        // ARN format: arn:local:{scope}:{type}/{name}
-        // Examples:
-        //   arn:local:global:workflow/my-workflow
-        //   arn:local:workspace/abc123:agent/orchestrator
-        let parts: Vec<&str> = arn.splitn(4, ':').collect();
-        if parts.len() != 4 || parts[0] != "arn" || parts[1] != "local" {
-            return None;
-        }
-
-        let scope = parts[2];
-        let resource = parts[3];
-        let (resource_type, name) = resource.split_once('/')?;
+        let arn = Arn::parse(arn)?;
+        let scope = arn.scope.as_str();
+        let resource_type = arn.resource_type.as_str();
+        let name = arn.name.as_str();
 
         let base_dir = if scope == "global" {
             self.workspace_root.join("global")
         } else if scope.starts_with("workspace/") {
             let workspace_id = scope.strip_prefix("workspace/").unwrap_or("");
             self.workspace_root.join("workspaces").join(workspace_id)
+        } else if scope.starts_with("project/") {
+            let project_id = scope.strip_prefix("project/").unwrap_or("");
+            self.workspace_root.join("projects").join(project_id)
         } else {
             return None;
         };

@@ -3,7 +3,7 @@
  * Part of the WorkflowEditor hybrid editing surface.
  *
  * YAML format matches the Kubernetes-inspired manifest:
- *   apiVersion: workflows.local/v1
+ *   apiVersion: <workflow api version>
  *   kind: Workflow
  *   metadata:
  *     name: ...

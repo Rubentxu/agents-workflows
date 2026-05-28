@@ -9,6 +9,7 @@ use axum::{
     response::Response,
     Json,
 };
+use registry::domain::Arn;
 
 use super::rest_types::*;
 use crate::state::AppState;
@@ -1074,7 +1075,7 @@ pub async fn get_content(
     };
 
     // For templates, derive content type from format field in frontmatter
-    let content_type = if arn.contains("/template/") {
+    let content_type = if matches!(parse_arn(&arn), Ok(parsed) if parsed.resource_type == "template") {
         get_template_content_type(&content)
     } else {
         get_content_type(&arn).to_string()
@@ -1220,23 +1221,8 @@ impl validation::RegistryView for RegistryViewAdapter {
 }
 
 fn parse_resource_type_from_arn(arn: &str) -> Result<validation::ResourceType, (StatusCode, Json<ErrorResponse>)> {
-    // ARN format:
-    //   arn:local:{scope}:{type}/{name}
-    // Examples:
-    //   arn:local:global:workflow/sdd-full
-    //   arn:local:project/app:workflow/my-flow
-    //   arn:local:workspace/abc123:agent/orchestrator
-    //
-    // The resource type is always in the last colon-delimited segment before '/'.
-    let resource_segment = arn.rsplit(':').next().unwrap_or_default();
-    let resource_type = resource_segment.split('/').next().unwrap_or_default();
-
-    if resource_type.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::new("INVALID_ARN", &format!("Invalid ARN format: {}", arn))),
-        ));
-    }
+    let parsed = parse_arn(arn)?;
+    let resource_type = parsed.resource_type.as_str();
 
     match resource_type {
         "workflow" => Ok(validation::ResourceType::Workflow),
@@ -1252,17 +1238,19 @@ fn parse_resource_type_from_arn(arn: &str) -> Result<validation::ResourceType, (
     }
 }
 
+fn parse_arn(arn: &str) -> Result<Arn, (StatusCode, Json<ErrorResponse>)> {
+    Arn::parse(arn).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::new("INVALID_ARN", &format!("Invalid ARN format: {}", arn))),
+        )
+    })
+}
+
 fn get_content_type(arn: &str) -> &'static str {
-    if arn.contains("/skill/") {
-        "text/markdown"
-    } else if arn.contains("/prompt/") {
-        "text/markdown"
-    } else if arn.contains("/template/") {
-        // Templates can have different formats based on their format field
-        // Default to text/markdown but could be derived from content
-        "text/markdown"
-    } else {
-        "text/yaml"
+    match parse_arn(arn).map(|parsed| parsed.resource_type) {
+        Ok(resource_type) if matches!(resource_type.as_str(), "skill" | "prompt" | "template") => "text/markdown",
+        _ => "text/yaml",
     }
 }
 

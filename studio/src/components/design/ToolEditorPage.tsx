@@ -13,6 +13,7 @@ import { useValidationGate } from '@/hooks/useValidationGate';
 import { useDirtyGuard } from '@/hooks/useDirtyGuard';
 import { EditorLayout, DirtyGuardDialog } from './shared';
 import { ResourceYamlEditor } from '@/components/monaco';
+import { KIND_TO_API_VERSION } from '@/types';
 
 export function ToolEditorPage() {
   const { projectId, toolId } = useParams();
@@ -27,7 +28,7 @@ export function ToolEditorPage() {
     : decodeURIComponent(toolId);
 
   const defaultYaml = isNew
-    ? `apiVersion: workflows.local/v1
+    ? `apiVersion: ${KIND_TO_API_VERSION.Tool}
 kind: Tool
 metadata:
   name: new-tool

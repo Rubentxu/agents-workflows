@@ -13,7 +13,7 @@
 import { useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useResourceApi } from '@/hooks/useResourceApi';
-import type { ResourceKind } from '@/types';
+import { KIND_TO_API_VERSION, type ResourceKind } from '@/types';
 
 export type CreationPath = 'template' | 'blank' | 'duplicate' | 'override';
 
@@ -71,7 +71,7 @@ export function ResourceComposer({ onClose, initialArn }: ResourceComposerProps)
 
   const generateYaml = useCallback(() => {
     if (!state.kind || !state.name) return '';
-    const apiVersion = 'workflows.local/v1';
+    const apiVersion = KIND_TO_API_VERSION[state.kind];
     return `apiVersion: ${apiVersion}
 kind: ${state.kind}
 metadata:

@@ -1,8 +1,25 @@
-arn: arn:local:global:prompt/seed-system
-name: seed-system
-description: System prompt template
-type: prompt
-config:
-  template: "You are working in project {{context}}. Follow SDD workflow."
-  variables:
-    - context
+apiVersion: prompts.local/v1
+kind: Prompt
+metadata:
+  uid: ""
+  arn: arn:local:global:prompt/seed-system
+  name: seed-system
+  scope: global
+  labels:
+    seed: "true"
+  annotations:
+    description: "System prompt template"
+spec:
+  description: System prompt template
+  kind: system
+  template: |
+    You are working in project {{context}}.
+    Follow the SDD workflow stages:
+    - Explore: understand the problem
+    - Propose: define the change
+    - Design: architect the solution
+    - Spec: document requirements
+    - Tasks: plan implementation
+    - Apply: implement
+    - Verify: validate
+    - Archive: close

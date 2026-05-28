@@ -208,12 +208,27 @@ export function parseToolResult(result: unknown, fallback: string = '[]'): unkno
 /**
  * Determine MCP tool name from ARN resource type.
  */
-export function arnToTool(type: string): string {
+export function arnToTool(type: string): string | null {
   switch (type) {
     case 'workflow': return 'workflow_get';
     case 'agent': return 'agent_get';
     case 'skill': return 'skill_get';
     case 'prompt': return 'prompt_get';
-    default: throw new Error(`Unknown resource type: ${type}`);
+    case 'tool': return 'tool_inspect';
+    case 'template': return null;
+    case 'policy': return null;
+    case 'execution': return 'execution_get';
+    case 'artifact': return 'artifact_get';
+    case 'insight': return 'insights_query';
+    default: return null;
+  }
+}
+
+export function arnToolArguments(type: string, arn: string): Record<string, unknown> {
+  switch (type) {
+    case 'insight':
+      return {};
+    default:
+      return { arn };
   }
 }

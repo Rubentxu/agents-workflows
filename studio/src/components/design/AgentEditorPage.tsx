@@ -14,6 +14,7 @@ import { useValidationGate } from '@/hooks/useValidationGate';
 import { useDirtyGuard } from '@/hooks/useDirtyGuard';
 import { EditorLayout, DirtyGuardDialog } from './shared';
 import { ResourceYamlEditor } from '@/components/monaco';
+import { KIND_TO_API_VERSION } from '@/types';
 
 export function AgentEditorPage() {
   const { projectId, agentId } = useParams();
@@ -29,7 +30,7 @@ export function AgentEditorPage() {
     : decodeURIComponent(agentId);
 
   const defaultYaml = isNew
-    ? `apiVersion: workflows.local/v1
+    ? `apiVersion: ${KIND_TO_API_VERSION.Agent}
 kind: Agent
 metadata:
   name: new-agent

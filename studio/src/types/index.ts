@@ -12,7 +12,7 @@ export * from './metrics';
 
 // Manifest types — export only types to avoid name collisions
 export type { ResourceKind, ArnScope, ArnScopeValue, Manifest } from './manifest';
-export { API_VERSION, RESOURCE_TYPES, KIND_TO_TYPE, buildArn, parseArn, isMoreSpecific, resolveEffectiveScope } from './manifest';
+export { API_VERSION, KIND_TO_API_VERSION, RESOURCE_TYPES, KIND_TO_TYPE, buildArn, parseArn, isMoreSpecific, resolveEffectiveScope } from './manifest';
 
 // Workflow manifest
 export type { WorkflowManifest, WorkflowKind, WorkflowSpec } from './manifest.workflow';

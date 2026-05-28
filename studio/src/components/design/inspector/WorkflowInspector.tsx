@@ -3,9 +3,12 @@
  * Part of the WorkflowEditor hybrid editing surface.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Node } from '@xyflow/react';
 import type { StageNodeData } from '../nodes/WorkflowStageNode';
+import { useMcpTools } from '@/hooks/useMcpTools';
+import { parseArn } from '@/types/manifest';
+import type { RegistryNode } from '@/types';
 
 interface WorkflowInspectorProps {
   node: Node<StageNodeData, 'stage'>;
@@ -27,8 +30,190 @@ interface WorkflowInspectorProps {
   onDeleteStage?: (stageId: string) => void;
 }
 
+function AgentArnAutocomplete({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { listAgents } = useMcpTools();
+  const [agents, setAgents] = useState<RegistryNode[]>([]);
+  const [inputValue, setInputValue] = useState(value);
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load agents on mount
+  useEffect(() => {
+    let mounted = true;
+    listAgents().then((list) => {
+      if (mounted) setAgents(list);
+    });
+    return () => { mounted = false; };
+  }, [listAgents]);
+
+  // Sync input with external value
+  useEffect(() => {
+    setInputValue(value);
+  }, [value]);
+
+  // Filter agents by input
+  const filteredAgents = agents.filter((agent) => {
+    const search = inputValue.toLowerCase();
+    return (
+      agent.name.toLowerCase().includes(search) ||
+      (agent.namespace?.toLowerCase().includes(search) ?? false) ||
+      agent.id.toLowerCase().includes(search)
+    );
+  });
+
+  // Handle keyboard navigation
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+        setSelectedIndex(-1);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedIndex((prev) => Math.min(prev + 1, filteredAgents.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedIndex((prev) => Math.max(prev - 1, -1));
+      } else if (e.key === 'Enter' && selectedIndex >= 0) {
+        e.preventDefault();
+        const agent = filteredAgents[selectedIndex];
+        if (agent) {
+          onChange(agent.id);
+          setInputValue(agent.id);
+          setIsOpen(false);
+          setSelectedIndex(-1);
+        }
+      }
+    },
+    [filteredAgents, selectedIndex, onChange]
+  );
+
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(target) &&
+        inputRef.current &&
+        !inputRef.current.contains(target)
+      ) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        id="inspector-agent"
+        type="text"
+        value={inputValue}
+        onChange={(e) => {
+          setInputValue(e.target.value);
+          setIsOpen(true);
+          setSelectedIndex(-1);
+        }}
+        onFocus={() => setIsOpen(true)}
+        onKeyDown={handleKeyDown}
+        placeholder="arn:local:global:agent/..."
+        className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface outline-none focus:border-primary font-mono"
+      />
+      {isOpen && filteredAgents.length > 0 && (
+        <div
+          ref={dropdownRef}
+          className="absolute z-50 top-full left-0 right-0 mt-1 bg-surface border border-outline-variant rounded-lg shadow-lg max-h-48 overflow-auto"
+        >
+          {filteredAgents.slice(0, 10).map((agent, index) => {
+            const parsed = parseArn(agent.id);
+            const scope = parsed?.scope ?? 'unknown';
+            return (
+              <button
+                key={agent.id}
+                type="button"
+                className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center justify-between gap-2 ${
+                  index === selectedIndex ? 'bg-primary/10 text-primary' : 'hover:bg-surface-container-hover text-on-surface'
+                }`}
+                onClick={() => {
+                  onChange(agent.id);
+                  setInputValue(agent.id);
+                  setIsOpen(false);
+                  setSelectedIndex(-1);
+                }}
+                onMouseEnter={() => setSelectedIndex(index)}
+              >
+                <div className="flex flex-col min-w-0">
+                  <span className="font-medium truncate">{agent.name}</span>
+                  <span className="text-[10px] text-secondary font-mono truncate">{agent.id}</span>
+                </div>
+                <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-secondary">
+                  {scope}
+                </span>
+              </button>
+            );
+          })}
+          {filteredAgents.length > 10 && (
+            <div className="px-3 py-1.5 text-[10px] text-secondary border-t border-outline-variant">
+              +{filteredAgents.length - 10} more agents
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentArnStatus({ agentArn, agents }: { agentArn: string; agents: RegistryNode[] }) {
+  if (!agentArn) return null;
+
+  const agentExists = agents.some((agent) => agent.id === agentArn);
+
+  if (agentExists) {
+    return (
+      <div className="flex items-center gap-1 text-[10px] text-success mt-1">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M4 8l3 3 5-5" />
+        </svg>
+        Agent resolved
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 text-[10px] text-warning mt-1">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M8 1v10M8 13v1" />
+        <circle cx="8" cy="8" r="6" />
+      </svg>
+      Agent not found in current scope — create it or verify the ARN
+    </div>
+  );
+}
+
 export function WorkflowInspector({ node, workflow, onUpdate, onClose, onDeleteStage }: WorkflowInspectorProps) {
   const stageData = workflow?.spec?.stages?.find((s) => s.id === node.id);
+  const { listAgents } = useMcpTools();
+  const [agents, setAgents] = useState<RegistryNode[]>([]);
+
+  // Load agents for status check
+  useEffect(() => {
+    let mounted = true;
+    listAgents().then((list) => {
+      if (mounted) setAgents(list);
+    });
+    return () => { mounted = false; };
+  }, [listAgents]);
 
   const [localData, setLocalData] = useState<StageNodeData>({
     ...node.data,
@@ -119,13 +304,13 @@ export function WorkflowInspector({ node, workflow, onUpdate, onClose, onDeleteS
         {/* Agent */}
         <div>
           <label htmlFor="inspector-agent" className="block text-xs font-medium text-secondary mb-1">Agent ARN</label>
-          <input
-            id="inspector-agent"
-            type="text"
+          <AgentArnAutocomplete
             value={localData.agent ?? stageData?.agent ?? ''}
-            onChange={(e) => handleChange('agent', e.target.value)}
-            placeholder="arn:local:global:agent/..."
-            className="w-full text-sm bg-surface border border-outline-variant rounded px-3 py-2 text-on-surface outline-none focus:border-primary font-mono"
+            onChange={(value) => handleChange('agent', value)}
+          />
+          <AgentArnStatus
+            agentArn={localData.agent ?? stageData?.agent ?? ''}
+            agents={agents}
           />
         </div>
 

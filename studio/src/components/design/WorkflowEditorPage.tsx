@@ -34,7 +34,7 @@ import { LoadingState } from '@/components/states/LoadingState';
 import { workflowToYaml } from '@/lib/workflowToYaml';
 import { InlineDiffSummary } from './shared/InlineDiffSummary';
 import { StagePalette, type StageTemplate } from './StagePalette';
-import { buildArn } from '@/types/manifest';
+import { buildArn, type ArnScopeValue } from '@/types/manifest';
 import { instantiateWorkflowFromTemplate } from '@/lib/workflowTemplates';
 
 import type { Workflow } from '@/types/workflow';
@@ -660,6 +660,7 @@ export function WorkflowEditorPage() {
           isOpen={paletteOpen}
           onToggle={() => setPaletteOpen((prev) => !prev)}
           onAddStage={addStageToWorkflow}
+          scope={derivedScope as ArnScopeValue}
         />
 
         {/* Canvas */}
